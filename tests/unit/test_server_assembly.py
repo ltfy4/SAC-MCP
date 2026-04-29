@@ -1,0 +1,65 @@
+"""Sanity tests: the FastMCP server wires up cleanly with all tools."""
+
+from __future__ import annotations
+
+import pytest
+
+from sac_mcp.config import get_settings
+from sac_mcp.server import build_server
+
+
+@pytest.mark.asyncio
+async def test_all_tools_registered_with_correct_hints() -> None:
+    server = build_server(get_settings())
+    tools = await server.list_tools()
+    names = {t.name for t in tools}
+
+    # Coverage spot-check across every surface.
+    expected = {
+        # Admin
+        "whoami", "tenant_info", "health_check",
+        # Audit
+        "query_audit_log",
+        # Calendar
+        "list_calendar_tasks", "update_task_status",
+        # Content network
+        "list_packages", "create_cn_import_job", "get_cn_job_status",
+        # Data export
+        "read_fact_data", "read_master_data", "read_audit_data",
+        # Data import
+        "create_import_job", "upload_job_data", "validate_job", "run_job",
+        "get_job_status", "cancel_job",
+        # Models
+        "list_models", "get_model_metadata", "list_dimensions", "list_measures",
+        # Multi-action
+        "list_multi_actions", "run_multi_action",
+        # Resources
+        "list_resources", "get_resource",
+        # Stories
+        "list_stories", "get_story", "search_stories",
+        # Teams
+        "list_teams", "add_member", "remove_member",
+        # Users
+        "list_users", "create_user", "deactivate_user",
+    }
+    missing = expected - names
+    assert not missing, f"missing tools: {missing}"
+
+    by_name = {t.name: t for t in tools}
+    # Read-only hints
+    assert by_name["list_models"].annotations.readOnlyHint is True
+    assert by_name["read_fact_data"].annotations.readOnlyHint is True
+    # Destructive hints
+    assert by_name["run_job"].annotations.destructiveHint is True
+    assert by_name["create_import_job"].annotations.destructiveHint is True
+    assert by_name["deactivate_user"].annotations.destructiveHint is True
+
+
+@pytest.mark.asyncio
+async def test_resources_and_prompts_registered() -> None:
+    server = build_server(get_settings())
+    res = await server.list_resources()
+    assert {str(r.uri) for r in res} >= {"sac://tenant/info", "sac://catalog/models"}
+
+    prompts = await server.list_prompts()
+    assert {p.name for p in prompts} >= {"explore_tenant", "plan_writeback", "audit_drilldown"}
