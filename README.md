@@ -99,7 +99,8 @@ See [`docs/tools.md`](docs/tools.md) for the full list. Highlights:
 - `list_unit_tables`, `get_unit_rates`, `upload_unit_rates`, `read_currency_data`
 - `init_delta_tracking`, `get_delta_changes` (OData v4 change tracking)
 - `get_widget_data`, `list_story_widgets`
-- `smart_query` — automatic OData / Widget Query routing for SQL-like queries
+- `sql_query` — automatic OData / Widget Query routing for SQL-like queries
+- `smart_query` — plan-only NL→OData translator: returns a `read_fact_data` plan from a natural-language question, never executes the query
 
 ## Bundled agent client
 

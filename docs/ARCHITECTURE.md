@@ -142,13 +142,16 @@ Both transports consume the same `FastMCP` instance built by `build_server()`.
 - **Server-assembly test** (`test_server_assembly.py`) builds the full FastMCP app and asserts: every expected tool name is present and has the right hint. This is the safety net for the "I forgot to register a module" failure.
 - **No live tests in CI.** Live tests live in `tests/integration/` and run only when `SAC_LIVE_TEST=1`.
 
+## Implemented features
+
+- **Semantic NL→OData tool** — `smart_query(model_id, question)` reads the model's `$metadata`, extracts dimension/measure names, and returns a rule-based `read_fact_data` plan (filter, select, orderby, top) plus a rationale. The tool is **plan-only**: it never executes the query. The caller (or LLM) reviews the plan and explicitly invokes `read_fact_data` with the suggested arguments. That confirmation step is the safety boundary — the rule-based mapping can misinterpret a question, so we never let it touch tenant data on its own.
+
 ## Open extension points (none implemented yet)
 
 These are deliberately **not** in the codebase — adding them is a future feature, not a bug fix:
 
 - **3-legged OAuth** (`OAuthTokenProvider` would gain a redirect-URL flow)
 - **Per-session SAC credentials** in HTTP transport (currently one tenant per server)
-- **Semantic NL→OData tool** (an LLM-assisted `query(model_id, question)` that uses `$metadata` as context)
 - **OpenTelemetry tracing & Prometheus metrics**
 - **Caching layer with ETag** for `$metadata` and dimension lists
 - **Story PNG/PDF export → MCP image resource**

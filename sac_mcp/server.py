@@ -40,18 +40,27 @@ def build_server(settings: Settings) -> FastMCP:
         audit,
         calendar,
         content_network,
+        currency,
         dataexport,
         dataimport,
+        difference,
         models,
         multiaction,
-        resources as resources_tools,
+        public_dimensions,
+        smart_query,
+        sql_query,
         stories,
         teams,
         users,
+        widget_query,
+    )
+    from sac_mcp.tools import (
+        resources as resources_tools,
     )
 
     for module in (
-        admin, audit, calendar, content_network, dataexport, dataimport,
+        admin, audit, calendar, content_network, dataexport, public_dimensions,
+        difference, widget_query, smart_query, sql_query, dataimport, currency,
         models, multiaction, resources_tools, stories, teams, users,
         catalog, tenant, audit_drilldown, explore_tenant, plan_writeback,
     ):

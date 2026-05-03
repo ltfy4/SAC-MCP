@@ -41,6 +41,17 @@ async def test_all_tools_registered_with_correct_hints() -> None:
         "list_teams", "add_member", "remove_member",
         # Users
         "list_users", "create_user", "deactivate_user",
+        # Public dimensions
+        "list_public_dimensions", "read_public_dimension_master_data",
+        "read_public_dimension_hierarchies",
+        # Currency / unit conversion
+        "list_currency_tables", "get_currency_table", "get_currency_rates",
+        "upload_currency_rates", "list_unit_tables", "get_unit_table",
+        "get_unit_rates", "upload_unit_rates", "read_currency_data",
+        # Delta / difference tracking
+        "init_delta_tracking", "get_delta_changes",
+        # Widget query + sql query + plan-only smart query
+        "get_widget_data", "list_story_widgets", "sql_query", "smart_query",
     }
     missing = expected - names
     assert not missing, f"missing tools: {missing}"
@@ -53,6 +64,14 @@ async def test_all_tools_registered_with_correct_hints() -> None:
     assert by_name["run_job"].annotations.destructiveHint is True
     assert by_name["create_import_job"].annotations.destructiveHint is True
     assert by_name["deactivate_user"].annotations.destructiveHint is True
+    assert by_name["upload_currency_rates"].annotations.destructiveHint is True
+    assert by_name["upload_unit_rates"].annotations.destructiveHint is True
+    # Read-only hints on new surfaces
+    assert by_name["list_public_dimensions"].annotations.readOnlyHint is True
+    assert by_name["init_delta_tracking"].annotations.readOnlyHint is True
+    assert by_name["smart_query"].annotations.readOnlyHint is True
+    assert by_name["sql_query"].annotations.readOnlyHint is True
+    assert by_name["get_widget_data"].annotations.readOnlyHint is True
 
 
 @pytest.mark.asyncio
