@@ -165,9 +165,13 @@ class SACClient:
     # -- typed helpers -------------------------------------------------
 
     async def get_json(
-        self, path: str, *, params: Mapping[str, Any] | None = None
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> Any:
-        response = await self.request("GET", path, params=params)
+        response = await self.request("GET", path, params=params, headers=headers)
         if not response.content:
             return None
         return response.json()
