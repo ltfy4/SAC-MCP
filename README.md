@@ -18,6 +18,18 @@ A Model Context Protocol (MCP) server that exposes the full SAP Analytics Cloud 
 
 ## Quick start
 
+### Quick setup
+
+Run the interactive setup wizard after installation:
+
+```bash
+uv run sac-mcp-setup
+```
+
+It prompts for your SAC credentials, writes a `.env` file, and prints a ready-to-paste Claude Desktop config snippet. See below for manual configuration if you prefer.
+
+### Manual configuration
+
 ```bash
 # 1. Clone & install (uv recommended)
 uv sync
@@ -82,6 +94,19 @@ See [`docs/tools.md`](docs/tools.md) for the full list. Highlights:
 - `create_cn_import_job`, `create_cn_export_job`
 - `list_calendar_tasks`, `update_task_status`
 - `run_multi_action`
+- `list_public_dimensions`, `read_public_dimension_master_data`, `read_public_dimension_hierarchies`
+- `list_currency_tables`, `get_currency_rates`, `upload_currency_rates`
+- `list_unit_tables`, `get_unit_rates`, `upload_unit_rates`, `read_currency_data`
+- `init_delta_tracking`, `get_delta_changes` (OData v4 change tracking)
+- `get_widget_data`, `list_story_widgets`
+- `smart_query` — automatic OData / Widget Query routing for SQL-like queries
+
+## Bundled agent client
+
+A minimal interactive harness that connects to the running SAC-MCP server
+over stdio and lets an LLM (Anthropic Claude or OpenAI) call your SAC tenant
+end-to-end lives in [`agent_client/`](agent_client/README.md). Useful for
+smoke tests and demos; not meant for production deployment.
 
 ## Development
 

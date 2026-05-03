@@ -44,6 +44,7 @@ dev = [
 
 [project.scripts]
 sac-mcp = "sac_mcp.__main__:main"
+sac-mcp-setup = "sac_mcp.setup_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ltfy4/sac-mcp"
