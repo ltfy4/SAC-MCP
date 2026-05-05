@@ -15,10 +15,10 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount
 
 from sac_mcp.config import Settings
@@ -32,7 +32,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._expected = expected_token
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Allow CORS preflight without a token.
         if request.method == "OPTIONS":
             return await call_next(request)
@@ -56,7 +56,7 @@ def run_http(server: FastMCP, settings: Settings) -> None:
     expected = settings.mcp_http_bearer.get_secret_value()
 
     middleware = [
-        Middleware(BearerAuthMiddleware, expected_token=expected),
+        Middleware(BearerAuthMiddleware, expected_token=expected),  # type: ignore[arg-type]
     ]
     if settings.cors_origins_list:
         middleware.append(

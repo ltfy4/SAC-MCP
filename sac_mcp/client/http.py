@@ -262,7 +262,7 @@ class SACClient:
         response = await self._http.get("/api/v1/csrf", headers=headers)
         if response.status_code >= 400:
             raise from_response(response)
-        token = response.headers.get("x-csrf-token", "")
+        token: str = response.headers.get("x-csrf-token", "")
         if not token:
             raise SACError(
                 "SAC /api/v1/csrf did not return an x-csrf-token header — verify "

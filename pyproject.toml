@@ -69,6 +69,13 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+# FastMCP's @server.tool() / @server.resource() / @server.prompt() decorators
+# have no type stubs. Relax the two strict checks that cascade from that gap.
+module = ["sac_mcp.tools.*", "sac_mcp.resources.*", "sac_mcp.prompts.*"]
+disallow_untyped_decorators = false
+warn_return_any = false
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
