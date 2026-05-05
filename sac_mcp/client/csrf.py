@@ -9,7 +9,7 @@ until the server returns 403 with ``x-csrf-token: required`` (typically after
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from sac_mcp.client.errors import SACError
 from sac_mcp.logging import get_logger

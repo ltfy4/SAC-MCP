@@ -7,6 +7,7 @@ SCIM ``detail``, generic ``error_description``). This module normalises them int
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 import httpx
@@ -48,10 +49,8 @@ def from_response(response: httpx.Response) -> SACError:
     status = response.status_code
     text = (response.text or "").strip()
     payload: Any = None
-    try:
+    with contextlib.suppress(ValueError):
         payload = response.json()
-    except ValueError:
-        pass
 
     code: str | None = None
     message: str | None = None

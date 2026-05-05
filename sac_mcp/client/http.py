@@ -11,8 +11,9 @@ A single :class:`SACClient` instance is shared by every tool. It handles:
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Mapping
+from typing import Any
 
 import httpx
 from tenacity import (
@@ -73,7 +74,7 @@ class SACClient:
         if self._owns_http:
             await self._http.aclose()
 
-    async def __aenter__(self) -> "SACClient":
+    async def __aenter__(self) -> SACClient:
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -106,7 +107,7 @@ class SACClient:
                 with attempt:
                     return await self._send_once(method, path, params, json, content, headers)
         except RetryError as exc:  # pragma: no cover - tenacity shouldn't reach here with reraise
-            raise exc.last_attempt.exception()  # type: ignore[misc]
+            raise exc.last_attempt.exception() from exc  # type: ignore[misc]
         raise RuntimeError("unreachable")
 
     async def _send_once(

@@ -37,7 +37,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """Return the tenant URL, MCP server version, and configured behaviour."""
 
         from sac_mcp import __version__
-        settings = client._settings  # noqa: SLF001 - intentional inspection
+        settings = client._settings
         return {
             "mcp_version": __version__,
             "tenant_url": settings.tenant_url_str,

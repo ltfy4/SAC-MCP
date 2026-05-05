@@ -29,5 +29,5 @@ class TokenBucket:
                     self._tokens -= cost
                     return
                 missing = cost - self._tokens
-                wait = missing / self.rate
+                missing / self.rate
             # unreachable

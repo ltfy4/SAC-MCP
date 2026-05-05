@@ -13,7 +13,7 @@ from sac_mcp.client.http import SACClient
 def register(server: FastMCP, client: SACClient) -> None:
     @server.resource("sac://tenant/info", mime_type="application/json")
     def tenant_info() -> str:
-        s = client._settings  # noqa: SLF001
+        s = client._settings
         return json.dumps(
             {
                 "mcp_version": __version__,

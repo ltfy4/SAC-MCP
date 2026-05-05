@@ -7,6 +7,7 @@ import pytest
 import respx
 
 from sac_mcp.client.auth import OAuthTokenProvider
+from sac_mcp.client.errors import SACError
 from sac_mcp.config import get_settings
 
 AUTH = "https://auth.example.com"
@@ -49,5 +50,5 @@ async def test_token_endpoint_failure_propagates(respx_mock: respx.MockRouter) -
         return_value=httpx.Response(401, json={"error": "invalid_client"})
     )
     provider = OAuthTokenProvider(get_settings())
-    with pytest.raises(Exception):
+    with pytest.raises(SACError):
         await provider.get_token()

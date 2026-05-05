@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
-from typing import Any
 
 import httpx
 import pytest
 import pytest_asyncio
 import respx
 
-from sac_mcp.client.auth import OAuthTokenProvider
 from sac_mcp.client.http import SACClient
 from sac_mcp.config import Settings
-
 
 TENANT = "https://tenant.example.com"
 AUTH = "https://auth.example.com"

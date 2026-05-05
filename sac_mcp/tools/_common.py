@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from sac_mcp.client.errors import SACError
-
 
 # Row count above which we prefer CSV/markdown instead of a JSON list.
 LARGE_ROW_THRESHOLD = 200
@@ -53,7 +53,7 @@ def as_csv(rows: Sequence[dict[str, Any]]) -> str:
     columns: list[str] = []
     seen: set[str] = set()
     for r in rows:
-        for k in r.keys():
+        for k in r:
             if k not in seen:
                 seen.add(k)
                 columns.append(k)
@@ -73,7 +73,7 @@ def as_markdown_table(rows: Sequence[dict[str, Any]], max_rows: int = 50) -> str
     cols: list[str] = []
     seen: set[str] = set()
     for r in rows[:max_rows]:
-        for k in r.keys():
+        for k in r:
             if k not in seen:
                 seen.add(k)
                 cols.append(k)
