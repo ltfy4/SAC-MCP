@@ -37,6 +37,7 @@ def build_server(settings: Settings) -> FastMCP:
     from sac_mcp.resources import catalog, tenant
     from sac_mcp.tools import (
         admin,
+        aggregation,
         audit,
         calendar,
         content_network,
@@ -45,6 +46,7 @@ def build_server(settings: Settings) -> FastMCP:
         dataimport,
         difference,
         models,
+        monitoring,
         multiaction,
         public_dimensions,
         smart_query,
@@ -59,10 +61,11 @@ def build_server(settings: Settings) -> FastMCP:
     )
 
     for module in (
-        admin, audit, calendar, content_network, dataexport, public_dimensions,
-        difference, widget_query, smart_query, sql_query, dataimport, currency,
-        models, multiaction, resources_tools, stories, teams, users,
-        catalog, tenant, audit_drilldown, explore_tenant, plan_writeback,
+        admin, aggregation, audit, calendar, content_network, dataexport,
+        public_dimensions, difference, widget_query, smart_query, sql_query,
+        dataimport, currency, models, monitoring, multiaction, resources_tools,
+        stories, teams, users, catalog, tenant, audit_drilldown, explore_tenant,
+        plan_writeback,
     ):
         module.register(server, client)
 

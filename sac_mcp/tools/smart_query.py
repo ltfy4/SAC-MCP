@@ -32,7 +32,7 @@ _MONTH_RE = re.compile(
 _TOP_RE = re.compile(r"\btop\s+(\d+)\b", re.IGNORECASE)
 _HIGH_RE = re.compile(r"\b(highest|largest|biggest|most|best)\b", re.IGNORECASE)
 _LOW_RE = re.compile(r"\b(lowest|smallest|least|worst|bottom)\b", re.IGNORECASE)
-_AGG_RE = re.compile(r"\b(sum|total|average|avg|mean)\b", re.IGNORECASE)
+_AGG_RE = re.compile(r"\b(sum|total|average|avg|mean|count)\b", re.IGNORECASE)
 
 _MONTH_MAP = {
     "jan": "01", "january": "01",
@@ -191,13 +191,45 @@ def _build_plan(
     effective_top = requested_top if requested_top is not None else top
 
     suggested_select: list[str] = []
-    if _AGG_RE.search(q):
-        suggested_select = list(measures)
+    agg_next_call: dict[str, Any] | None = None
+
+    if _AGG_RE.search(q) and measures:
+        target_measure = _pick_measure(q, measures)
+        agg_op = _detect_agg_op(q)
+        alias = f"{agg_op.capitalize()}{target_measure}"
+        group_dim = _find_dim(dimensions, *_DIMENSION_HINTS) if dimensions else None
+        group_by_plan: list[str] = []
+        if group_dim:
+            group_by_plan = [group_dim]
+        agg_next_call = {
+            "model_id": "",  # filled by caller
+            "group_by": group_by_plan,
+            "aggregates": [{"column": target_measure, "op": agg_op, "alias": alias}],
+            "filter": suggested_filter,
+            "top": effective_top,
+        }
         rationale_parts.append(
-            "Aggregation intent detected (sum/total/average) but the Data Export "
-            "OData service does not aggregate — selecting all measures so the "
-            "caller can aggregate client-side."
+            f"Aggregation intent detected ({agg_op}) → proposing read_aggregated_data "
+            f"with {agg_op}({target_measure}) as {alias}"
+            + (f" grouped by {group_dim}." if group_dim else " (no grouping dimension inferred).")
         )
+    elif _AGG_RE.search(q):
+        rationale_parts.append(
+            "Aggregation intent detected but no measures found in metadata — "
+            "cannot build an aggregation plan."
+        )
+
+    if agg_next_call is not None:
+        return {
+            "available_dimensions": dimensions,
+            "available_measures": measures,
+            "suggested_filter": suggested_filter,
+            "suggested_select": suggested_select,
+            "suggested_orderby": orderby,
+            "rationale": " ".join(rationale_parts) or "No filters or ordering inferred.",
+            "next_tool": "read_aggregated_data",
+            "next_call": agg_next_call,
+        }
 
     next_call: dict[str, Any] = {
         "model_id": "",  # filled by caller
@@ -229,6 +261,16 @@ def _extract_named_entity(question: str, keyword: str) -> str | None:
     return None
 
 
+def _detect_agg_op(question: str) -> str:
+    """Map aggregation keywords in a natural-language question to an OData op."""
+    q = question.lower()
+    if re.search(r"\b(average|avg|mean)\b", q):
+        return "average"
+    if re.search(r"\b(count|how many|number of)\b", q):
+        return "count"
+    return "sum"
+
+
 def _pick_measure(question: str, measures: list[str]) -> str:
     q_low = question.lower()
     for m in measures:
@@ -256,9 +298,10 @@ def register(server: FastMCP, client: SACClient) -> None:
           - Country / region / customer literals → eq filter using
             ``quote_odata_string``.
           - "top N" / "highest" / "largest" → orderby measure desc, top=N.
-          - "sum" / "total" / "average" → all measures placed in ``select``;
-            the Data Export OData service does not aggregate server-side, so
-            this surfaces an honest limitation in ``rationale``.
+          - "sum" / "total" / "average" / "count" → builds a
+            ``read_aggregated_data`` plan with the detected aggregation op and
+            the most relevant measure; ``next_tool`` is set to
+            ``"read_aggregated_data"``.
 
         Args:
             model_id: SAC model ID to plan against.
@@ -268,8 +311,9 @@ def register(server: FastMCP, client: SACClient) -> None:
         Returns:
             A dict with ``available_dimensions``, ``available_measures``,
             ``suggested_filter``, ``suggested_select``, ``suggested_orderby``,
-            ``rationale``, and ``next_call`` (a kwargs dict ready to pass to
-            ``read_fact_data``).
+            ``rationale``, ``next_tool`` (``"read_aggregated_data"`` when
+            aggregation intent is detected, otherwise ``"read_fact_data"``),
+            and ``next_call`` (kwargs ready to pass to ``next_tool``).
         """
         try:
             metadata = await client.get_json(

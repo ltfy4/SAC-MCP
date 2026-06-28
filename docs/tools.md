@@ -155,8 +155,33 @@ Programmatic access to widget data inside SAC stories. Currently only
 | `get_widget_data` | read | Fetch the rendered values from a story widget (kpiTile only). |
 | `list_story_widgets` | read | Best-effort list of widget descriptors embedded in a story. |
 
+## Aggregation (server-side)
+
+Server-side GROUP BY + measure aggregation via the OData v4 `$apply` operator.
+Requests hit `/api/v1/dataexport/providers/sac/{model_id}/Aggregation` and
+return already-aggregated rows — no client-side aggregation needed.
+
+| Tool | Hint | Parameters | Purpose |
+|------|------|-----------|---------|
+| `read_aggregated_data` | read | `model_id`, `group_by`, `aggregates`, `filter?`, `orderby?`, `top=200` | Generic GROUP BY + aggregate. `aggregates` is a list of `{column, op, alias}` dicts; `op` is one of `sum`, `average`, `min`, `max`, `countdistinct`, `count`. |
+| `top_n_by_measure` | read | `model_id`, `dimension`, `measure`, `agg="sum"`, `direction="desc"`, `top=10`, `filter?` | Convenience: top or bottom N members of a dimension ranked by one aggregated measure. |
+| `aggregate_by_dimension` | read | `model_id`, `dimension`, `measures`, `agg="sum"`, `filter?`, `top=200` | One dimension, multiple measures — returns a summary table. |
+
+## Monitoring
+
+Answers "is my data fresh", "when did this model last load", "how big is this model".
+Endpoint family: `/api/v1/monitoring/models/...`.
+Key fields: `size`, `rowCount`, `lastImportTime`, `lastModifiedBy`, `lastModifiedTime`.
+
+| Tool | Hint | Parameters | Purpose |
+|------|------|-----------|---------|
+| `list_monitored_models` | read | `top=200`, `filter?` | All models with monitoring metadata; optional OData `$filter`. |
+| `get_model_monitoring` | read | `model_id` | Monitoring detail for one model (size, row count, timestamps). |
+| `get_model_job_history` | read | `model_id`, `top=50`, `since_iso?` | Recent import/refresh jobs for a model; optionally filtered by start time. |
+
 ## Smart Query
 
 | Tool | Hint | Purpose |
 |------|------|---------|
-| `smart_query` | read | Accepts a SQL-like query, routes to OData or Widget Query automatically. Aggregations (`SUM`/`COUNT`/`GROUP BY`) prefer Widget Query when `story_id`+`widget_id` are supplied; everything else uses OData. |
+| `smart_query` | read | Translates a natural-language question into a query plan. When aggregation intent is detected (`sum`/`total`/`average`/`count`) returns a `read_aggregated_data` plan with `next_tool="read_aggregated_data"`; otherwise returns a `read_fact_data` plan. Never executes the query. |
+| `sql_query` | read | Accepts a SQL-like query string; routes automatically. Queries with explicit aggregate functions (`SUM(col)`, `COUNT(col)`, etc.) go to the Aggregation entity for server-side GROUP BY. With `story_id`+`widget_id` the Widget Query API is preferred. Everything else uses OData. |

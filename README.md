@@ -255,6 +255,22 @@ Queries the OData v4 Data Export Service (`/api/v1/dataexport/providers/sac/{mod
 </details>
 
 <details>
+<summary><strong>Aggregation — server-side GROUP BY (3 tools)</strong></summary>
+
+Server-side GROUP BY + measure aggregation via the OData v4 `$apply` operator
+(`/api/v1/dataexport/providers/sac/{model_id}/Aggregation`). Returns
+already-aggregated rows — no client-side aggregation needed. Supported ops:
+`sum`, `average`, `min`, `max`, `countdistinct`, `count`.
+
+| Tool | Type | Description |
+|---|---|---|
+| `read_aggregated_data` | read | Generic GROUP BY with any combination of dimensions and aggregate specs (`{column, op, alias}`) |
+| `top_n_by_measure` | read | Top or bottom N dimension members ranked by one aggregated measure |
+| `aggregate_by_dimension` | read | One dimension, multiple measures — same aggregation op applied to each |
+
+</details>
+
+<details>
 <summary><strong>Data Import — write-back lifecycle (7 tools)</strong></summary>
 
 Manages the full job lifecycle for writing fact or master data back into a model.
@@ -392,12 +408,25 @@ Programmatic access to widget data inside SAC stories. Currently only `kpiTile` 
 </details>
 
 <details>
+<summary><strong>Model Monitoring (3 tools)</strong></summary>
+
+Answers "is my data fresh", "when did this model last load", "how big is this model" via `/api/v1/monitoring/models/...`.
+
+| Tool | Type | Description |
+|---|---|---|
+| `list_monitored_models` | read | All models with monitoring metadata (size, rowCount, lastImportTime, lastModifiedBy, lastModifiedTime) |
+| `get_model_monitoring` | read | Monitoring detail for a single model |
+| `get_model_job_history` | read | Recent import/refresh jobs for a model, optionally filtered by start time |
+
+</details>
+
+<details>
 <summary><strong>Query routing (2 tools)</strong></summary>
 
 | Tool | Type | Description |
 |---|---|---|
-| `sql_query` | read | Accepts a SQL-like query string; routes to OData or Widget Query automatically. Aggregations (`SUM` / `COUNT` / `GROUP BY`) prefer Widget Query when `story_id` + `widget_id` are provided. |
-| `smart_query` | read | **Plan-only NL→OData translator.** Takes a natural-language question, reads `$metadata`, and returns a `read_fact_data` argument plan + rationale. Never executes the query — the caller reviews and runs it explicitly. |
+| `sql_query` | read | Accepts a SQL-like query string; routes automatically. Queries with explicit aggregate functions (`SUM(col)`, `COUNT(col)`, etc.) go to the Aggregation entity for server-side GROUP BY. With `story_id` + `widget_id` the Widget Query API is preferred instead. Everything else uses OData. |
+| `smart_query` | read | **Plan-only NL→OData/Aggregation translator.** Takes a natural-language question, reads `$metadata`, and returns a query plan + rationale. When aggregation intent is detected (`sum` / `total` / `average` / `count`) the plan targets `read_aggregated_data` (`next_tool="read_aggregated_data"`); otherwise it targets `read_fact_data`. Never executes the query — the caller reviews and runs it explicitly. |
 
 </details>
 
