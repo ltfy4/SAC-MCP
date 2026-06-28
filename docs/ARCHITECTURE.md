@@ -142,9 +142,12 @@ Both transports consume the same `FastMCP` instance built by `build_server()`.
 - **Server-assembly test** (`test_server_assembly.py`) builds the full FastMCP app and asserts: every expected tool name is present and has the right hint. This is the safety net for the "I forgot to register a module" failure.
 - **No live tests in CI.** Live tests live in `tests/integration/` and run only when `SAC_LIVE_TEST=1`.
 
-## Implemented features
+## Notable feature subsystems
 
-- **Semantic NL→OData tool** — `smart_query(model_id, question)` reads the model's `$metadata`, extracts dimension/measure names, and returns a rule-based `read_fact_data` plan (filter, select, orderby, top) plus a rationale. The tool is **plan-only**: it never executes the query. The caller (or LLM) reviews the plan and explicitly invokes `read_fact_data` with the suggested arguments. That confirmation step is the safety boundary — the rule-based mapping can misinterpret a question, so we never let it touch tenant data on its own.
+- **Server-side aggregation** — `read_aggregated_data`, `top_n_by_measure`, `aggregate_by_dimension` (in `tools/aggregation.py`) emit OData v4 `$apply=groupby((dims),aggregate(...))` expressions and read the per-model `/Aggregation` entity. Aggregation runs inside the tenant; the server only sees pre-aggregated rows. This keeps result sets small enough to stay in the LLM context even on large fact tables.
+- **Model monitoring** — `list_monitored_models`, `get_model_monitoring`, `get_model_job_history` (in `tools/monitoring.py`) hit `/api/v1/monitoring/models/...` to answer "is my data fresh", "when did this model last load", "how big is this model". Useful for daily-health-check style prompts.
+- **SQL-like router** — `sql_query` (in `tools/sql_query.py`) parses a SQL-flavoured input and routes to one of three back ends: Aggregation entity (explicit aggregate functions), Widget Query API (when `story_id`+`widget_id` are provided), or plain OData (everything else). Lets a user write "SUM(Amount) GROUP BY Region WHERE Year eq '2024'" and get server-side aggregation without picking the right tool by hand.
+- **Plan-only NL→OData / Aggregation translator** — `smart_query(model_id, question)` (in `tools/smart_query.py`) reads the model's `$metadata`, extracts dimension/measure names, and returns a rule-based plan (filter, select, orderby, top) plus a rationale. When aggregation intent is detected (`sum`/`total`/`average`/`count`) the plan targets `read_aggregated_data`; otherwise it targets `read_fact_data`. The tool is **plan-only**: it never executes the query. The caller (or LLM) reviews the plan and explicitly invokes the suggested tool with the suggested arguments. That confirmation step is the safety boundary — the rule-based mapping can misinterpret a question, so we never let it touch tenant data on its own.
 
 ## Open extension points (none implemented yet)
 
