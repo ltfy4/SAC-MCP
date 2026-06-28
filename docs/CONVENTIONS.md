@@ -1,6 +1,6 @@
 # Coding conventions
 
-This is the long-form companion to the "Conventions" section in `CLAUDE.md`. Skim `CLAUDE.md` for the rules; come here when you want the reasoning.
+This is the long-form companion to the "Conventions" section in `MAINTAINERS.md`. Skim `MAINTAINERS.md` for the rules; come here when you want the reasoning.
 
 ## File & module layout
 

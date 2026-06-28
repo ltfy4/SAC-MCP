@@ -52,7 +52,7 @@ SAC-MCP exposes the full SAP Analytics Cloud public API surface as MCP tools so 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    MCP Client (LLM)                          │
-│      Claude Desktop · Claude Code · custom client           │
+│      Claude Desktop · MCP Inspector · custom client          │
 └──────────────────────┬───────────────────────────────────────┘
                        │  stdio  or  Streamable HTTP
                        │          (bearer-auth + CORS)
@@ -440,7 +440,7 @@ Answers "is my data fresh", "when did this model last load", "how big is this mo
 uv run sac-mcp
 ```
 
-Used by Claude Desktop and Claude Code running on the same machine. The process communicates over stdin/stdout; logs go to stderr.
+Used by Claude Desktop, the MCP Inspector, and any other local MCP client running on the same machine. The process communicates over stdin/stdout; logs go to stderr.
 
 ### Streamable HTTP — for hosted / team use
 

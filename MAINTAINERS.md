@@ -1,12 +1,12 @@
-# CLAUDE.md
+# MAINTAINERS.md
 
-Project memory for Claude Code working on **SAC-MCP** — the SAP Analytics Cloud Model Context Protocol server.
+Internal notes for maintainers and contributors working on **SAC-MCP** — the SAP Analytics Cloud Model Context Protocol server. Read this before opening a non-trivial pull request.
 
 ## What this project is
 
-A Python MCP server that exposes the full SAP Analytics Cloud (SAC) public API surface (Public REST, Data Export OData v4, Data Import jobs, SCIM users/teams, Content Network, Calendar Tasks, Multi-Action, Audit) as MCP tools, resources and prompts.
+A Python MCP server that exposes the full SAP Analytics Cloud (SAC) public API surface (Public REST, Data Export OData v4, Data Import jobs, SCIM users/teams, Content Network, Calendar Tasks, Multi-Action, Audit, Monitoring) as MCP tools, resources and prompts.
 
-It is consumed by Claude Desktop, Claude Code, and any MCP-compatible client. Two transports are supported: `stdio` (local) and Streamable HTTP (remote / hosted).
+It is consumed by any MCP-compatible client. Two transports are supported: `stdio` (local) and Streamable HTTP (remote / hosted).
 
 ## Tech stack
 
@@ -23,46 +23,55 @@ It is consumed by Claude Desktop, Claude Code, and any MCP-compatible client. Tw
 
 ```
 sac_mcp/
-├── server.py            # build_server(): single FastMCP app, registers everything
-├── __main__.py          # entry point; reads MCP_TRANSPORT and dispatches
-├── config.py            # Pydantic settings, env vars, get_settings() (lru_cache)
-├── logging.py           # structlog setup + redaction list
-├── client/              # SAC HTTP layer — reused by every tool
-│   ├── auth.py          # OAuthTokenProvider (2-legged, asyncio.Lock, 60s leeway)
-│   ├── csrf.py          # CsrfTokenCache; refreshed on 403
-│   ├── http.py          # SACClient: request, get_json, post_json, paginate
-│   ├── odata.py         # ODataQuery + and_/or_/eq/contains/... builders
-│   ├── errors.py        # SACError + from_response() (normalises envelopes)
-│   ├── ratelimit.py     # async TokenBucket
-│   └── models.py        # permissive Pydantic DTOs (SACEntity etc.)
-├── tools/               # MCP tools, ONE MODULE PER SAC SURFACE
-│   ├── _common.py       # safe() decorator, compact(), as_csv(), as_markdown_table(), page_envelope()
-│   ├── admin.py         # whoami, tenant_info, health_check
+├── server.py              # build_server(): single FastMCP app, registers everything
+├── __main__.py            # entry point; reads MCP_TRANSPORT and dispatches
+├── setup_cli.py           # interactive onboarding CLI (writes .env, prints client config)
+├── config.py              # Pydantic settings, env vars, get_settings() (lru_cache)
+├── logging.py             # structlog setup + redaction list
+├── client/                # SAC HTTP layer — reused by every tool
+│   ├── auth.py            # OAuthTokenProvider (2-legged, asyncio.Lock, 60s leeway)
+│   ├── csrf.py            # CsrfTokenCache; refreshed on 403
+│   ├── http.py            # SACClient: request, get_json, post_json, paginate
+│   ├── odata.py           # ODataQuery + and_/or_/eq/contains/... builders
+│   ├── errors.py          # SACError + from_response() (normalises envelopes)
+│   ├── ratelimit.py       # async TokenBucket
+│   └── models.py          # permissive Pydantic DTOs (SACEntity etc.)
+├── tools/                 # MCP tools, ONE MODULE PER SAC SURFACE
+│   ├── _common.py         # safe() decorator, compact(), as_csv(), as_markdown_table(), page_envelope()
+│   ├── admin.py           # whoami, tenant_info, health_check
 │   ├── stories.py
-│   ├── resources.py     # /filerepository/Resources
-│   ├── models.py        # data-export Administration namespace
-│   ├── dataexport.py    # fact / master / audit OData reads (+ delta + CSV)
-│   ├── dataimport.py    # job lifecycle (create / upload / validate / run / status / cancel)
-│   ├── users.py         # SCIM Users
-│   ├── teams.py         # SCIM Groups
+│   ├── resources.py       # /filerepository/Resources
+│   ├── models.py          # data-export Administration namespace
+│   ├── dataexport.py      # fact / master / audit OData reads (+ delta + CSV)
+│   ├── aggregation.py     # server-side GROUP BY via OData $apply
+│   ├── dataimport.py      # job lifecycle (create / upload / validate / run / status / cancel)
+│   ├── difference.py      # snapshot delta between two date ranges
+│   ├── currency.py        # tenant currency conversion + exchange-rate reads
+│   ├── public_dimensions.py # public dimension members
+│   ├── widget_query.py    # story widget data reads
+│   ├── sql_query.py       # SQL-like router (OData / Aggregation / Widget Query)
+│   ├── smart_query.py     # plan-only natural-language query translator
+│   ├── monitoring.py      # data-freshness, row counts, job history
+│   ├── users.py           # SCIM Users
+│   ├── teams.py           # SCIM Groups
 │   ├── content_network.py
 │   ├── calendar.py
 │   ├── multiaction.py
 │   └── audit.py
-├── resources/           # MCP resources (read-only URIs)
-│   ├── tenant.py        # sac://tenant/info
-│   └── catalog.py       # sac://catalog/models (5-min cache)
-├── prompts/             # MCP prompts
+├── resources/             # MCP resources (read-only URIs)
+│   ├── tenant.py          # sac://tenant/info
+│   └── catalog.py         # sac://catalog/models (5-min cache)
+├── prompts/               # MCP prompts
 │   ├── explore_tenant.py
 │   ├── plan_writeback.py
 │   └── audit_drilldown.py
 └── transports/
     ├── stdio.py
-    └── http.py          # bearer-auth + optional CORS
+    └── http.py            # bearer-auth + optional CORS
 
 tests/
-├── conftest.py          # respx-based fixtures, auto-loaded env
-└── unit/                # 26 tests; all use respx, no live network
+├── conftest.py            # respx-based fixtures, auto-loaded env
+└── unit/                  # all tests use respx, no live network
 ```
 
 ## Conventions (follow these — they're already established)
@@ -71,14 +80,14 @@ tests/
 - **One file per SAC surface.** Don't merge unrelated tools.
 - Each module exposes `def register(server: FastMCP, client: SACClient) -> None`.
 - All tools are **`async def`**, return a `dict[str, Any]`.
-- Decorate every tool with **`@safe`** (from `tools/_common.py`) — converts `SACError` into a structured `{"error": ...}` dict so the LLM can react.
+- Decorate every tool with **`@safe`** (from `tools/_common.py`) — converts `SACError` into a structured `{"error": ...}` dict so the caller can react.
 - Decorate with **`@server.tool(annotations=ToolAnnotations(...))`** — apply `readOnlyHint=True` to every read tool, `destructiveHint=True` to every write/mutate tool. This is how MCP clients decide whether to confirm.
-- Tool **docstrings** become the LLM-facing description — write them in plain English, with Args sections when parameters need clarification.
+- Tool **docstrings** become the caller-facing description — write them in plain English, with Args sections when parameters need clarification.
 - Tool **parameter types** drive the JSON schema; prefer `Literal[...]` for enums, `int | None = None` for optionals.
 
 ### Pagination & shaping
 - Always use `client.paginate(...)` for list endpoints — it follows OData `@odata.nextLink` and Public-REST cursors automatically.
-- Cap responses with `max_rows`/`top`. **Default to ≤ 200 rows** so the LLM context stays small.
+- Cap responses with `max_rows`/`top`. **Default to ≤ 200 rows** so the calling context stays small.
 - Use `compact(rows)` to drop `None` keys; `as_csv` / `as_markdown_table` for big tables; `page_envelope(rows, next_cursor=...)` for the canonical return shape `{"rows": [...], "row_count": N, "next_cursor": ...}`.
 
 ### HTTP client
@@ -168,7 +177,7 @@ SAC_LIVE_TEST=1 pytest tests/integration -q -m live
 2. Import & call `<surface>.register(server, client)` from `sac_mcp/server.py`'s registration loop.
 3. Add tools per the recipe above.
 4. If the surface needs a brand-new client method (e.g. multipart upload), add it to `client/http.py` — keep tools thin.
-5. Document the new endpoint family in this file under "SAC API surfaces covered" if it's user-visible.
+5. Document the new endpoint family in the README under the tool catalogue.
 
 ## Things to avoid
 
@@ -179,10 +188,10 @@ SAC_LIVE_TEST=1 pytest tests/integration -q -m live
 - **Don't** instantiate `SACClient` in tests — use the `client` fixture from `conftest.py`.
 - **Don't** call live SAC from unit tests. Live tests live under `tests/integration/` and are gated by the `live` pytest marker + `SAC_LIVE_TEST=1`.
 - **Don't** hardcode tenant URLs. Always read from `Settings`.
-- **Don't** add 3-legged OAuth or refresh-token logic to `auth.py` without first updating the plan — the project commits to 2-legged client_credentials only for v1.
-- **Don't** push to `main`/`master` directly. Feature work goes on `claude/...` or `feat/...` branches.
+- **Don't** add 3-legged OAuth or refresh-token logic to `auth.py` without first opening an issue — the project commits to 2-legged client_credentials only for v1.
+- **Don't** push to `main`/`master` directly. Feature work goes on `feat/...` branches with a pull request.
 - **Don't** commit `.env` (already in `.gitignore`), credentials, real tenant URLs, or recorded HTTP fixtures with PII.
-- **Don't** use emojis in code, comments, commits, or docs unless the user explicitly asks.
+- **Don't** use emojis in code, comments, commits, or docs unless explicitly requested.
 
 ## Testing rules
 
@@ -210,6 +219,6 @@ SAC_LIVE_TEST=1 pytest tests/integration -q -m live
 7. Commit message explains *why*, not *what*.
 8. Pushed to the feature branch only — never to `main` without an approved PR.
 
-## Plan & roadmap
+## Roadmap
 
-The original implementation plan is at `/root/.claude/plans/i-want-to-build-radiant-simon.md` (read-only — keep it as the historical record). Future enhancements (3-legged OAuth, semantic NL→OData, OpenTelemetry, story rendering, Datasphere, Helm chart, etc.) belong in a separate `ROADMAP.md` if/when added — don't sneak roadmap items into feature branches.
+Future enhancements (3-legged OAuth, semantic NL→OData, OpenTelemetry, story rendering, Datasphere, Helm chart, etc.) belong in a separate `ROADMAP.md` if/when added — don't sneak roadmap items into feature branches.

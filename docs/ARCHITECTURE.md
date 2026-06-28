@@ -1,13 +1,13 @@
 # Architecture
 
-Deeper architectural notes for SAC-MCP. Shorter day-to-day rules live in `CLAUDE.md`; this file explains the **why**.
+Deeper architectural notes for SAC-MCP. Shorter day-to-day rules live in `MAINTAINERS.md`; this file explains the **why**.
 
 ## High-level picture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                       MCP Client (LLM)                       │
-│   Claude Desktop · Claude Code · Inspector · custom client   │
+│   Claude Desktop · MCP Inspector · custom client             │
 └─────────────────────────┬────────────────────────────────────┘
                 stdio  │  Streamable HTTP
                        │  (bearer-auth + optional CORS)
@@ -127,7 +127,7 @@ A single `TokenBucket(rate=SAC_MAX_RPS)` gates every request. This is local-only
 
 | | stdio | Streamable HTTP |
 |---|---|---|
-| Client | Claude Desktop, Claude Code (local) | Anything that speaks Streamable HTTP |
+| Client | Claude Desktop and other local MCP clients | Anything that speaks Streamable HTTP |
 | Auth (transport) | OS-level (whoever can run the binary) | Bearer (`MCP_HTTP_BEARER`) + optional CORS allowlist |
 | State | Per-process | Per-process (server is multi-session-aware) |
 | Logs | stderr (stdout is the protocol channel — never `print` there) | stderr |
@@ -157,4 +157,4 @@ These are deliberately **not** in the codebase — adding them is a future featu
 - **Story PNG/PDF export → MCP image resource**
 - **Smart Predict integration**
 
-When adding any of these, update this file and `CLAUDE.md` in the same change.
+When adding any of these, update this file and `MAINTAINERS.md` in the same change.
