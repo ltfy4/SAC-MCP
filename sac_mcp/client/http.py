@@ -14,10 +14,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 from tenacity import (
     AsyncRetrying,
+    RetryCallState,
     RetryError,
     retry_if_exception_type,
     stop_after_attempt,
@@ -45,6 +47,30 @@ _DEFAULT_HEADERS = {
 class _RetryableHTTPStatus(Exception):
     def __init__(self, response: httpx.Response) -> None:
         self.response = response
+
+
+# Cap on how long a server-supplied Retry-After may make us wait.
+_MAX_RETRY_AFTER = 60.0
+
+
+class _wait_retry_after(wait_exponential):
+    """Exponential backoff that defers to the server's ``Retry-After`` header.
+
+    SAC 429 responses include ``Retry-After`` (seconds). Retrying earlier than
+    that is guaranteed to fail again, so when the header is present and parses
+    as a number we wait exactly that long (capped) instead of the backoff value.
+    """
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        if isinstance(exc, _RetryableHTTPStatus):
+            retry_after = exc.response.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    return min(max(float(retry_after), 0.0), _MAX_RETRY_AFTER)
+                except ValueError:
+                    pass  # HTTP-date form or garbage — fall back to backoff
+        return super().__call__(retry_state)
 
 
 class SACClient:
@@ -100,7 +126,7 @@ class SACClient:
         try:
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(attempts),
-                wait=wait_exponential(multiplier=0.5, min=0.5, max=10),
+                wait=_wait_retry_after(multiplier=0.5, min=0.5, max=10),
                 retry=retry_if_exception_type((_RetryableHTTPStatus, httpx.TransportError)),
                 reraise=True,
             ):
@@ -245,7 +271,12 @@ class SACClient:
             )
             if not next_link:
                 return
-            next_path = next_link
+            # SAC emits absolute links, root-relative links ("/api/...") and
+            # service-relative links ("Data?$skiptoken=..."). The latter must
+            # be resolved against the URL of the page we just read — passing
+            # them straight to httpx would resolve against the tenant root.
+            current_url = str(self._http.base_url.join(next_path))
+            next_path = urljoin(current_url, str(next_link))
             next_params = None  # nextLink already includes query
 
     # -- CSRF fetcher --------------------------------------------------
