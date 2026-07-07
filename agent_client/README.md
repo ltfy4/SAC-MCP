@@ -19,7 +19,7 @@ python agent.py
 ## Example session
 
 ```
-Connected! 50 tools available.
+Connected! 87 tools available.
 
 You: What models are available on this tenant?
 Assistant: I'll check the available models for you.
@@ -42,5 +42,5 @@ You: quit
 | Variable          | Default                      | Description                        |
 | ----------------- | ---------------------------- | ---------------------------------- |
 | `LLM_PROVIDER`    | `anthropic`                  | `anthropic` or `openai`            |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514`   | Anthropic model ID                 |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5`   | Anthropic model ID                 |
 | `OPENAI_MODEL`    | `gpt-4o`                     | OpenAI model ID                    |
