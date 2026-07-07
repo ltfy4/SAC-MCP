@@ -33,3 +33,25 @@ def test_markdown_table_truncates() -> None:
 def test_page_envelope_includes_cursor() -> None:
     env = page_envelope([{"a": 1}], next_cursor="abc")
     assert env == {"rows": [{"a": 1}], "row_count": 1, "next_cursor": "abc"}
+
+
+def test_safe_converts_value_error_to_structured_error() -> None:
+    import asyncio
+
+    from sac_mcp.client.errors import SACError
+    from sac_mcp.tools._common import safe
+
+    @safe
+    async def bad_input_tool() -> dict:
+        raise ValueError("Invalid aggregation operator 'median'")
+
+    @safe
+    async def sac_error_tool() -> dict:
+        raise SACError("boom", status_code=400, code="Bad")
+
+    out = asyncio.run(bad_input_tool())
+    assert out["code"] == "invalid_input"
+    assert "median" in out["error"]
+
+    out = asyncio.run(sac_error_tool())
+    assert out["status"] == 400

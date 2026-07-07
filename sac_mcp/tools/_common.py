@@ -25,6 +25,10 @@ def safe(call):  # type: ignore[no-untyped-def]
             return await call(*args, **kwargs)
         except SACError as exc:
             return {"error": exc.to_tool_message(), "code": exc.code, "status": exc.status_code}
+        except ValueError as exc:
+            # Bad tool input (e.g. an unsupported aggregation operator) — hand
+            # the LLM a structured error it can correct, not a traceback.
+            return {"error": f"Invalid input: {exc}", "code": "invalid_input"}
 
     wrapper.__name__ = call.__name__
     wrapper.__doc__ = call.__doc__

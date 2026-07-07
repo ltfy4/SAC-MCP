@@ -54,16 +54,20 @@ def _extract_job_id(payload: Any) -> str | None:
 def _failed_row_count(validation: Any) -> int:
     if not isinstance(validation, dict):
         return 0
+    # Check every known key and take the worst count — a release may return an
+    # empty failedRows list next to a non-zero invalidRowCount.
+    worst = 0
     for key in _FAILED_ROW_KEYS:
         value = validation.get(key)
         if isinstance(value, list):
-            return len(value)
+            worst = max(worst, len(value))
+            continue
         try:
-            if value is not None and int(value) > 0:
-                return int(value)
+            if value is not None:
+                worst = max(worst, int(value))
         except (TypeError, ValueError):
             continue
-    return 0
+    return worst
 
 
 def register(server: FastMCP, client: SACClient) -> None:
