@@ -58,6 +58,38 @@ or a single object dict. Errors are surfaced as `{ "error": ..., "code": ..., "s
 | `get_job_status` | read | Poll the job state. |
 | `cancel_job` | destructive | Cancel an in-progress job. |
 | `list_recent_jobs` | read | Recent jobs for a model. |
+| `list_all_import_jobs` | read | Recent jobs across every model on the tenant. |
+| `get_import_metadata` | read | Column metadata an import payload must provide. |
+| `get_job_invalid_rows` | read | Rows rejected by validation, with reasons. |
+| `write_fact_data` | destructive | One-shot lifecycle: create → upload (chunked) → validate → run. Stops before `run` if validation rejects rows. |
+
+## FP&A Analysis
+
+Read-only composite tools for financial planning & reporting questions. They
+combine the Data Export master-data and Aggregation endpoints and do the
+joining/variance math client-side.
+
+| Tool | Hint | Purpose |
+|------|------|---------|
+| `list_versions` | read | Members of the model's version dimension (`public.Actual`, `public.Plan`, ...). |
+| `compare_versions` | read | Variance report: one measure, two versions, broken down by dimensions; returns `variance` and `variance_pct` per row, largest absolute variance first. |
+| `measure_trend` | read | Last N periods of a measure with period-over-period `change` / `change_pct`. |
+| `check_data_completeness` | read | Which dimension members have no fact data booked (e.g. cost centres missing plan submissions). |
+
+## Data Actions
+
+Planning-model automation (copy, cross-model copy, allocation,
+advanced-formula steps). Distinct from Multi-Actions, which orchestrate
+several data actions plus publish/import steps. Executions are asynchronous —
+poll with `get_data_action_status`.
+
+| Tool | Hint | Purpose |
+|------|------|---------|
+| `list_data_actions` | read | List Data Actions (optionally filtered by model). |
+| `get_data_action` | read | Detail for one Data Action, including parameter definitions. |
+| `run_data_action` | destructive | Trigger an execution; returns an `executionId`. |
+| `list_data_action_executions` | read | Recent executions of one Data Action. |
+| `get_data_action_status` | read | Poll one execution until terminal. |
 
 ## Models
 

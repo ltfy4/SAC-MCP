@@ -70,6 +70,14 @@ Job-based; **the only place CSRF really matters in practice**.
 | 5. Status | GET  | `/api/v1/dataimport/jobs/{jobId}/status` |
 | 6. Cancel | DELETE | `/api/v1/dataimport/jobs/{jobId}` |
 
+Supporting endpoints:
+
+- `GET /api/v1/dataimport/models/{model}/metadata` → the columns an import payload must provide (dimensions, measures, types). Fetch this before building rows.
+- `GET /api/v1/dataimport/jobs` → recent jobs across all models.
+- `GET /api/v1/dataimport/jobs/{jobId}/invalidRows` → rows rejected by validation, with per-row reasons. Response key varies by release (`invalidRows` / `failedRows` / `value`) — probe all three.
+
+Validation responses also vary: failed-row counts appear under `failedNumberRows`, `failedRows` or `invalidRowCount` depending on release.
+
 Body shapes vary by SAC release; we keep types loose (`dict[str, Any]`).
 
 ### SCIM users / groups
@@ -94,6 +102,21 @@ Body shapes vary by SAC release; we keep types loose (`dict[str, Any]`).
 - `GET /api/v1/multiaction/multiactions` → defined Multi-Actions.
 - `POST /api/v1/multiaction/multiactions/{id}/runs` → trigger a run.
 - `GET /api/v1/multiaction/runs/{runId}` → status.
+
+### Data Actions
+Planning-model automation (copy / cross-model copy / allocation /
+advanced-formula steps). Not the same thing as Multi-Actions — a Multi-Action
+*orchestrates* data actions plus publish and import steps.
+
+- `GET /api/v1/dataactions` → list; filter with `modelId=<id>`.
+- `GET /api/v1/dataactions/{id}` → detail, including parameter definitions.
+- `POST /api/v1/dataactions/{id}/executions` → trigger; body `{"parameterValues": [{"parameterId": ..., "value": ...}]}`. Returns an `executionId`.
+- `GET /api/v1/dataactions/{id}/executions` → recent runs.
+- `GET /api/v1/dataactions/executions/{executionId}` → status; poll until terminal (`COMPLETED` / `FAILED`).
+
+Executions are asynchronous and can take minutes on large models. Requires the
+OAuth client to have a role with planning rights on the target model —
+otherwise `403` without a CSRF hint.
 
 ### Audit
 - `GET /api/v1/auditing/AuditLog` (OData).

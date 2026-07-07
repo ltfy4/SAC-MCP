@@ -28,7 +28,14 @@ async def test_all_tools_registered_with_correct_hints() -> None:
         "read_fact_data", "read_master_data", "read_audit_data",
         # Data import
         "create_import_job", "upload_job_data", "validate_job", "run_job",
-        "get_job_status", "cancel_job",
+        "get_job_status", "cancel_job", "write_fact_data", "get_job_invalid_rows",
+        "list_all_import_jobs", "get_import_metadata",
+        # Data actions
+        "list_data_actions", "get_data_action", "run_data_action",
+        "list_data_action_executions", "get_data_action_status",
+        # FP&A analysis
+        "list_versions", "compare_versions", "measure_trend",
+        "check_data_completeness",
         # Models
         "list_models", "get_model_metadata", "list_dimensions", "list_measures",
         # Multi-action
@@ -67,6 +74,8 @@ async def test_all_tools_registered_with_correct_hints() -> None:
     # Destructive hints
     assert by_name["run_job"].annotations.destructiveHint is True
     assert by_name["create_import_job"].annotations.destructiveHint is True
+    assert by_name["write_fact_data"].annotations.destructiveHint is True
+    assert by_name["run_data_action"].annotations.destructiveHint is True
     assert by_name["deactivate_user"].annotations.destructiveHint is True
     assert by_name["upload_currency_rates"].annotations.destructiveHint is True
     assert by_name["upload_unit_rates"].annotations.destructiveHint is True
@@ -82,6 +91,12 @@ async def test_all_tools_registered_with_correct_hints() -> None:
     assert by_name["list_monitored_models"].annotations.readOnlyHint is True
     assert by_name["get_model_monitoring"].annotations.readOnlyHint is True
     assert by_name["get_model_job_history"].annotations.readOnlyHint is True
+    assert by_name["list_data_actions"].annotations.readOnlyHint is True
+    assert by_name["get_data_action_status"].annotations.readOnlyHint is True
+    assert by_name["get_job_invalid_rows"].annotations.readOnlyHint is True
+    assert by_name["get_import_metadata"].annotations.readOnlyHint is True
+    assert by_name["compare_versions"].annotations.readOnlyHint is True
+    assert by_name["check_data_completeness"].annotations.readOnlyHint is True
 
 
 @pytest.mark.asyncio

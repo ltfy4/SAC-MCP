@@ -77,7 +77,7 @@ def run_http(server: FastMCP, settings: Settings) -> None:
         # Propagate FastMCP's lifespan so its session manager's task group
         # starts before the first request; otherwise every POST 500s with
         # "Task group is not initialized".
-        lifespan=lambda _: mcp_app.router.lifespan_context(_),
+        lifespan=lambda _: mcp_app.router.lifespan_context(_),  # type: ignore[arg-type]
     )
 
     _log.info(

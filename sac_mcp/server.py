@@ -31,8 +31,9 @@ def build_server(settings: Settings) -> FastMCP:
             "tenant (stories, models, resources), query model data via the OData "
             "Data Export Service, write back facts/master data via the Data "
             "Import job lifecycle, manage users/teams (SCIM), and orchestrate "
-            "Content Network, Calendar Tasks and Multi-Action runs. Read tools "
-            "are safe; tools that mutate the tenant are marked destructive."
+            "Content Network, Calendar Tasks, Data Action and Multi-Action "
+            "runs. Read tools are safe; tools that mutate the tenant are "
+            "marked destructive."
         ),
         transport_security=transport_security,
     )
@@ -50,9 +51,11 @@ def build_server(settings: Settings) -> FastMCP:
         calendar,
         content_network,
         currency,
+        dataactions,
         dataexport,
         dataimport,
         difference,
+        fpa,
         models,
         monitoring,
         multiaction,
@@ -69,9 +72,9 @@ def build_server(settings: Settings) -> FastMCP:
     )
 
     for module in (
-        admin, aggregation, audit, calendar, content_network, dataexport,
-        public_dimensions, difference, widget_query, smart_query, sql_query,
-        dataimport, currency, models, monitoring, multiaction, resources_tools,
+        admin, aggregation, audit, calendar, content_network, dataactions,
+        dataexport, public_dimensions, difference, fpa, widget_query, smart_query,
+        sql_query, dataimport, currency, models, monitoring, multiaction, resources_tools,
         stories, teams, users, catalog, tenant, audit_drilldown, explore_tenant,
         plan_writeback,
     ):
