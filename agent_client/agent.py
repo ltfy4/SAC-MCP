@@ -11,7 +11,7 @@ Usage:
 Environment variables:
     LLM_PROVIDER     — "anthropic" (default) or "openai"
     ANTHROPIC_API_KEY / OPENAI_API_KEY — API key for the LLM
-    ANTHROPIC_MODEL  — default "claude-sonnet-4-20250514"
+    ANTHROPIC_MODEL  — default "claude-sonnet-5"
     OPENAI_MODEL     — default "gpt-4o"
 """
 
@@ -66,7 +66,7 @@ async def _run_anthropic(session: ClientSession, mcp_tools: Any) -> None:
     import anthropic
 
     client = anthropic.Anthropic()
-    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
     tools = _convert_mcp_tools_to_anthropic(mcp_tools)
     messages: list[dict[str, Any]] = []
 

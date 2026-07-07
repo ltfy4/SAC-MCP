@@ -157,6 +157,33 @@ async def test_write_fact_data_stops_on_validation_failures(
 
 
 @pytest.mark.asyncio
+async def test_write_fact_data_stops_when_only_secondary_count_key_reports_failures(
+    client: SACClient, respx_mock: respx.MockRouter
+) -> None:
+    # An empty failedRows list next to a non-zero invalidRowCount must still
+    # stop the run — no key may short-circuit the check.
+    _mock_csrf(respx_mock)
+    respx_mock.post(CREATE_PATH).mock(
+        return_value=httpx.Response(200, json={"jobID": JOB})
+    )
+    respx_mock.post(DATA_PATH).mock(return_value=httpx.Response(200, json={}))
+    respx_mock.post(VALIDATE_PATH).mock(
+        return_value=httpx.Response(
+            200, json={"failedRows": [], "invalidRowCount": 5}
+        )
+    )
+    run_route = respx_mock.post(RUN_PATH).mock(
+        return_value=httpx.Response(200, json={})
+    )
+
+    tools = _register(client)
+    result = await tools["write_fact_data"](model_id=MODEL, rows=ROWS)  # type: ignore[operator]
+
+    assert result["ran"] is False
+    assert not run_route.called
+
+
+@pytest.mark.asyncio
 async def test_write_fact_data_requires_rows_or_csv(client: SACClient) -> None:
     tools = _register(client)
     result = await tools["write_fact_data"](model_id=MODEL)  # type: ignore[operator]

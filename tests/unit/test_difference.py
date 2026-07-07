@@ -10,7 +10,7 @@ from sac_mcp.client.http import SACClient
 from sac_mcp.tools import difference
 
 TENANT = "https://tenant.example.com"
-MODEL_PATH = "/api/v1/dataexport/providers/sac/model1/FactData"
+MODEL_PATH = "/api/v1/dataexport/providers/sac/model1/Data"
 
 
 def _register(client: SACClient) -> dict[str, object]:

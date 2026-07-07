@@ -27,6 +27,20 @@ def test_odata_message_can_be_object() -> None:
     assert "deep" in err.message
 
 
+def test_odata_error_without_code_does_not_garble_code() -> None:
+    err = from_response(_resp(400, {"error": {"message": "boom"}}))
+    assert err.code is None  # must not become the stringified error dict
+    assert "boom" in err.message
+
+
+def test_oauth_string_error_becomes_code() -> None:
+    err = from_response(
+        _resp(400, {"error": "invalid_client", "error_description": "bad secret"})
+    )
+    assert err.code == "invalid_client"
+    assert "bad secret" in err.message
+
+
 def test_scim_detail() -> None:
     err = from_response(_resp(404, {"detail": "user not found"}))
     assert "user not found" in err.message

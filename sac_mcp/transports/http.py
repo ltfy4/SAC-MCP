@@ -63,8 +63,18 @@ def run_http(server: FastMCP, settings: Settings) -> None:
             Middleware(
                 CORSMiddleware,
                 allow_origins=settings.cors_origins_list,
-                allow_methods=["GET", "POST", "OPTIONS"],
-                allow_headers=["Authorization", "Content-Type"],
+                allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                # Streamable HTTP needs the MCP session/protocol headers on
+                # requests, and the client must be able to read the session id
+                # assigned by the initialize response.
+                allow_headers=[
+                    "Authorization",
+                    "Content-Type",
+                    "mcp-session-id",
+                    "mcp-protocol-version",
+                    "last-event-id",
+                ],
+                expose_headers=["mcp-session-id"],
             )
         )
 

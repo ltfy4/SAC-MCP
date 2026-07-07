@@ -246,6 +246,7 @@ def _build_plan(
         "suggested_select": suggested_select,
         "suggested_orderby": orderby,
         "rationale": " ".join(rationale_parts) or "No filters or ordering inferred.",
+        "next_tool": "read_fact_data",
         "next_call": next_call,
     }
 

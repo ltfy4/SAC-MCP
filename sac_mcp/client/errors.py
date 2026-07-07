@@ -69,7 +69,12 @@ def from_response(response: httpx.Response) -> SACError:
                 "message"
             )
         if code is None:
-            code = payload.get("error") or payload.get("status")
+            # OAuth-style envelopes carry a string under "error"; SCIM carries
+            # a status. Ignore dict values (an OData error object without a
+            # "code" key) — stringifying those garbles to_tool_message().
+            fallback = payload.get("error") or payload.get("status")
+            if isinstance(fallback, (str, int)):
+                code = str(fallback)
 
     if not message:
         message = text or response.reason_phrase or "SAC request failed"

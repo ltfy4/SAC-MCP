@@ -121,7 +121,7 @@ def main(*, _input: TextIO | None = None) -> None:
 
     if transport == "http":
         http_host = _prompt("HTTP host", default="127.0.0.1", stream=stream)
-        http_port = _prompt("HTTP port", default="8080", stream=stream)
+        http_port = _prompt("HTTP port", default="8765", stream=stream)
         bearer = secrets.token_hex(32)
         env_values["MCP_TRANSPORT"] = "http"
         env_values["MCP_HTTP_HOST"] = http_host
@@ -137,6 +137,7 @@ def main(*, _input: TextIO | None = None) -> None:
         )
 
     env_path.write_text(_build_env_content(env_values))
+    env_path.chmod(0o600)  # contains SAC_CLIENT_SECRET — owner-only
     sys.stderr.write(f"Configuration written to {env_path}\n\n")
 
     command, note = _resolve_sac_mcp_command()

@@ -49,12 +49,14 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def remove_member(team_id: str, user_id: str) -> dict[str, Any]:
         """Remove a user from a team."""
 
+        # SCIM filter string literals escape backslash and double-quote (RFC 7644).
+        escaped = user_id.replace("\\", "\\\\").replace('"', '\\"')
         body = {
             "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
             "Operations": [
                 {
                     "op": "remove",
-                    "path": f'members[value eq "{user_id}"]',
+                    "path": f'members[value eq "{escaped}"]',
                 }
             ],
         }

@@ -140,7 +140,7 @@ Both transports consume the same `FastMCP` instance built by `build_server()`.
 - **Pure unit tests** for the OData builder, error parser, shaping helpers (no I/O).
 - **`respx`-mocked tests** for the OAuth, CSRF, pagination and retry paths. The pattern: register an OAuth mock, register the SAC endpoint mocks, instantiate `SACClient` (no fakes — real client class, just mocked transport).
 - **Server-assembly test** (`test_server_assembly.py`) builds the full FastMCP app and asserts: every expected tool name is present and has the right hint. This is the safety net for the "I forgot to register a module" failure.
-- **No live tests in CI.** Live tests live in `tests/integration/` and run only when `SAC_LIVE_TEST=1`.
+- **No live tests in CI.** Every test runs offline against respx mocks; there is no suite that talks to a real tenant.
 
 ## Notable feature subsystems
 

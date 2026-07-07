@@ -29,5 +29,4 @@ class TokenBucket:
                     self._tokens -= cost
                     return
                 missing = cost - self._tokens
-                missing / self.rate
-            # unreachable
+                await asyncio.sleep(missing / self.rate)

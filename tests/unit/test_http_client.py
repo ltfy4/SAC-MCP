@@ -107,6 +107,59 @@ async def test_4xx_raises_sac_error(respx_mock: respx.MockRouter) -> None:
 
 
 @pytest.mark.asyncio
+async def test_429_retry_honours_retry_after_header(respx_mock: respx.MockRouter) -> None:
+    _oauth_route(respx_mock)
+    route = respx_mock.get(f"{TENANT}/api/v1/throttled").mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "0"}, json={}),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+
+    import time
+
+    start = time.monotonic()
+    async with SACClient(get_settings()) as client:
+        out = await client.get_json("/api/v1/throttled")
+    elapsed = time.monotonic() - start
+
+    assert out == {"ok": True}
+    assert route.call_count == 2
+    # Default exponential backoff has a 0.5s floor; honouring Retry-After: 0
+    # means the retry happens almost immediately.
+    assert elapsed < 0.4
+
+
+@pytest.mark.asyncio
+async def test_paginate_resolves_service_relative_nextlink(
+    respx_mock: respx.MockRouter,
+) -> None:
+    _oauth_route(respx_mock)
+
+    base = f"{TENANT}/api/v1/dataexport/providers/sac/M1/Data"
+    page1 = {
+        "value": [{"i": 1}],
+        # Service-relative link, as SAC OData commonly emits.
+        "@odata.nextLink": "Data?$skiptoken=abc",
+    }
+    page2 = {"value": [{"i": 2}]}
+
+    respx_mock.get(base, params={"$skiptoken": "abc"}).mock(
+        return_value=httpx.Response(200, json=page2)
+    )
+    respx_mock.get(base).mock(return_value=httpx.Response(200, json=page1))
+
+    async with SACClient(get_settings()) as client:
+        out = [
+            r
+            async for r in client.paginate(
+                "/api/v1/dataexport/providers/sac/M1/Data"
+            )
+        ]
+    assert [r["i"] for r in out] == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_paginate_follows_odata_nextlink(respx_mock: respx.MockRouter) -> None:
     _oauth_route(respx_mock)
 
