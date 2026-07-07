@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
-from sac_mcp.client.odata import ODataQuery, and_, contains, eq
+from sac_mcp.client.odata import ODataQuery, and_, contains, eq, quote_odata_string
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 ResourceType = Literal[
@@ -57,7 +57,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """Fetch a single repository resource by ID."""
 
         return await client.get_json(
-            f"/api/v1/filerepository/Resources('{resource_id}')"
+            f"/api/v1/filerepository/Resources({quote_odata_string(resource_id)})"
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))

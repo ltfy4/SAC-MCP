@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.odata import eq
 from sac_mcp.tools._common import safe
 
 TaskStatus = Literal["Open", "InProgress", "Completed", "Cancelled"]
@@ -26,9 +27,9 @@ def register(server: FastMCP, client: SACClient) -> None:
         params: dict[str, Any] = {"$top": top}
         clauses = []
         if assignee:
-            clauses.append(f"AssigneeId eq '{assignee}'")
+            clauses.append(eq("AssigneeId", assignee))
         if status:
-            clauses.append(f"Status eq '{status}'")
+            clauses.append(eq("Status", status))
         if clauses:
             params["$filter"] = " and ".join(clauses)
         return await client.get_json("/api/v1/calendar/tasks", params=params)
