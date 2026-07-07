@@ -38,7 +38,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     @safe
     async def init_delta_tracking(
         model_id: str,
-        entity: str = "FactData",
+        entity: str = "Data",
         top: int = 200,
         filter: str | None = None,
     ) -> dict[str, Any]:
@@ -49,7 +49,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         Args:
             model_id: The SAC model (provider) ID.
-            entity: OData entity set, defaults to ``FactData``.
+            entity: OData entity set, defaults to ``Data`` (fact data).
             top: Page size cap.
             filter: Raw OData ``$filter`` expression.
         """
@@ -79,7 +79,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_delta_changes(
         model_id: str,
         delta_token: str,
-        entity: str = "FactData",
+        entity: str = "Data",
     ) -> dict[str, Any]:
         """Get only the rows that changed since the delta token was issued."""
 

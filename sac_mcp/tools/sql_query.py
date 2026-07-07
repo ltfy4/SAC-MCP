@@ -50,10 +50,46 @@ _SQL_OP_MAP = {
     "MIN": "min",
     "MAX": "max",
 }
+# The tool accepts "FactData" for backwards compatibility, but the Data Export
+# Service exposes fact data under the entity set "Data" (see SAC_API_NOTES.md).
+_ENTITY_SET = {"FactData": "Data", "MasterData": "MasterData", "AuditData": "AuditData"}
+# Split on single-quoted literals ('' is an escaped quote) so operator
+# translation never touches string values.
+_QUOTED_RE = re.compile(r"('(?:[^']|'')*')")
 
 
 def _is_analytical(query: str) -> bool:
     return bool(_ANALYTICAL_RE.search(query))
+
+
+def _sql_filter_to_odata(text: str) -> str:
+    """Translate SQL comparison/logical operators into OData v4 equivalents.
+
+    ``Region = 'EMEA' AND Amount >= 100`` → ``Region eq 'EMEA' and Amount ge 100``.
+    Already-valid OData input passes through unchanged.
+    """
+
+    out: list[str] = []
+    for i, part in enumerate(_QUOTED_RE.split(text)):
+        if i % 2 == 1:  # quoted literal — leave untouched
+            out.append(part)
+            continue
+        s = part
+        s = re.sub(r"!=|<>", " ne ", s)
+        s = re.sub(r">=", " ge ", s)
+        s = re.sub(r"<=", " le ", s)
+        s = re.sub(r"=", " eq ", s)
+        s = re.sub(r">", " gt ", s)
+        s = re.sub(r"<", " lt ", s)
+        s = re.sub(r"\b(AND|OR|NOT)\b", lambda m: m.group(1).lower(), s)
+        out.append(s)
+    return re.sub(r"\s+", " ", "".join(out)).strip()
+
+
+def _sql_orderby_to_odata(text: str) -> str:
+    """OData sort directions are lowercase; SQL habit is uppercase."""
+
+    return re.sub(r"\b(ASC|DESC)\b", lambda m: m.group(1).lower(), text.strip())
 
 
 def _parse_simple_query(query: str) -> dict[str, Any]:
@@ -68,11 +104,11 @@ def _parse_simple_query(query: str) -> dict[str, Any]:
 
     m = _ORDERBY_RE.search(q)
     if m:
-        out["orderby"] = m.group(1).strip()
+        out["orderby"] = _sql_orderby_to_odata(m.group(1))
 
     m = _WHERE_RE.search(q)
     if m:
-        out["filter"] = m.group(1).strip()
+        out["filter"] = _sql_filter_to_odata(m.group(1))
 
     select_match = _SELECT_RE.search(q)
     if select_match:
@@ -85,7 +121,7 @@ def _parse_simple_query(query: str) -> dict[str, Any]:
         cleaned = _TOP_RE.sub("", q)
         cleaned = _ORDERBY_RE.sub("", cleaned).strip()
         if cleaned:
-            out["filter"] = cleaned
+            out["filter"] = _sql_filter_to_odata(cleaned)
 
     return out
 
@@ -123,7 +159,8 @@ def register(server: FastMCP, client: SACClient) -> None:
         """
 
         analytical = _is_analytical(query)
-        odata_path = f"/api/v1/dataexport/providers/sac/{model_id}/{entity}"
+        entity_set = _ENTITY_SET.get(entity, entity)
+        odata_path = f"/api/v1/dataexport/providers/sac/{model_id}/{entity_set}"
 
         if analytical and story_id and widget_id:
             result = await client.get_json(
@@ -171,10 +208,10 @@ def register(server: FastMCP, client: SACClient) -> None:
                     agg_params["$top"] = top_m.group(1)
                 where_m = _WHERE_RE.search(query)
                 if where_m:
-                    agg_params["$filter"] = where_m.group(1).strip()
+                    agg_params["$filter"] = _sql_filter_to_odata(where_m.group(1))
                 orderby_m = _ORDERBY_RE.search(query)
                 if orderby_m:
-                    agg_params["$orderby"] = orderby_m.group(1).strip()
+                    agg_params["$orderby"] = _sql_orderby_to_odata(orderby_m.group(1))
 
                 agg_rows: list[dict[str, Any]] = []
                 async for r in client.paginate(

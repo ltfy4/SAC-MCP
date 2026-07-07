@@ -61,6 +61,29 @@ def test_parse_simple_query_filter_only() -> None:
     assert "top" not in parsed
 
 
+# ---- SQL → OData operator translation ---------------------------------
+
+
+def test_sql_operators_translate_to_odata() -> None:
+    parsed = _parse_simple_query("Region = 'EMEA' AND Amount >= 100 OR Margin < 5")
+    assert parsed["filter"] == "Region eq 'EMEA' and Amount ge 100 or Margin lt 5"
+
+
+def test_sql_translation_leaves_quoted_literals_alone() -> None:
+    parsed = _parse_simple_query("Name = 'A = B AND C'")
+    assert parsed["filter"] == "Name eq 'A = B AND C'"
+
+
+def test_valid_odata_passes_through_unchanged() -> None:
+    parsed = _parse_simple_query("Region eq 'EMEA' and Amount gt 10")
+    assert parsed["filter"] == "Region eq 'EMEA' and Amount gt 10"
+
+
+def test_orderby_direction_is_lowercased() -> None:
+    parsed = _parse_simple_query("Region eq 'EMEA' ORDER BY Amount DESC")
+    assert parsed["orderby"] == "Amount desc"
+
+
 # ---- routing tests ---------------------------------------------------
 
 
@@ -75,7 +98,7 @@ async def test_sql_query_routes_to_odata(
         return httpx.Response(200, json={"value": [{"id": 1}]})
 
     respx_mock.get(
-        f"{TENANT}/api/v1/dataexport/providers/sac/M1/FactData"
+        f"{TENANT}/api/v1/dataexport/providers/sac/M1/Data"
     ).mock(side_effect=handler)
 
     tools = _register(client)
@@ -136,7 +159,7 @@ async def test_sql_query_analytical_groupby_only_falls_back_with_note(
 ) -> None:
     # GROUP BY without any aggregate function — no $apply can be built, falls back to OData note.
     respx_mock.get(
-        f"{TENANT}/api/v1/dataexport/providers/sac/M1/FactData"
+        f"{TENANT}/api/v1/dataexport/providers/sac/M1/Data"
     ).mock(return_value=httpx.Response(200, json={"value": [{"id": 1}]}))
 
     tools = _register(client)
