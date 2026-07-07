@@ -63,6 +63,19 @@ or a single object dict. Errors are surfaced as `{ "error": ..., "code": ..., "s
 | `get_job_invalid_rows` | read | Rows rejected by validation, with reasons. |
 | `write_fact_data` | destructive | One-shot lifecycle: create → upload (chunked) → validate → run. Stops before `run` if validation rejects rows. |
 
+## FP&A Analysis
+
+Read-only composite tools for financial planning & reporting questions. They
+combine the Data Export master-data and Aggregation endpoints and do the
+joining/variance math client-side.
+
+| Tool | Hint | Purpose |
+|------|------|---------|
+| `list_versions` | read | Members of the model's version dimension (`public.Actual`, `public.Plan`, ...). |
+| `compare_versions` | read | Variance report: one measure, two versions, broken down by dimensions; returns `variance` and `variance_pct` per row, largest absolute variance first. |
+| `measure_trend` | read | Last N periods of a measure with period-over-period `change` / `change_pct`. |
+| `check_data_completeness` | read | Which dimension members have no fact data booked (e.g. cost centres missing plan submissions). |
+
 ## Data Actions
 
 Planning-model automation (copy, cross-model copy, allocation,

@@ -30,7 +30,7 @@ Expose the full SAC public API surface — stories, model data, write-back, user
 
 ## Highlights
 
-80+ tools across 21 SAC surfaces — every one of them async, typed, and gated by an MCP `readOnlyHint` / `destructiveHint` so clients can decide whether to confirm.
+85+ tools across 22 SAC surfaces — every one of them async, typed, and gated by an MCP `readOnlyHint` / `destructiveHint` so clients can decide whether to confirm.
 
 | Area | What you can ask the LLM to do |
 |---|---|
@@ -39,6 +39,7 @@ Expose the full SAC public API surface — stories, model data, write-back, user
 | **Aggregation (server-side)** | "Top 5 regions by total sales", "Sum amount grouped by year and country" |
 | **Model data (write)** | "Import this CSV of actuals into the HR planning model" |
 | **Data actions** | "Run the 'Copy Actuals to Plan' data action for version 2026.Q1" |
+| **FP&A analysis** | "Show budget vs actual variance by cost centre", "Which cost centres haven't submitted their 2026 plan?" |
 | **Public dimensions** | "List all cost-centre members", "Show the product hierarchy" |
 | **Delta / change tracking** | "What rows changed since my last sync?" |
 | **Currency & units** | "Upload updated EUR→USD rates effective 2024-01-01" |
@@ -207,6 +208,7 @@ All tools return one of:
 | **Aggregation** | 3 | read | Server-side GROUP BY via OData `$apply` |
 | **Data Import** | 11 | read + write | Job lifecycle (create → upload → validate → run → status → cancel), one-shot `write_fact_data`, invalid-row inspection, import metadata |
 | **Data Actions** | 5 | read + write | List, inspect, trigger and poll planning data actions |
+| **FP&A Analysis** | 4 | read | Version listing, actual-vs-plan variance, trends, plan-submission completeness |
 | **Public Dimensions** | 3 | read | Tenant-wide shared dimensions (cost centres, products, hierarchies) |
 | **Currency & Units** | 9 | read + write | Conversion tables, rates, per-model currency data |
 | **Delta tracking** | 2 | read | OData v4 delta token reads |
@@ -370,6 +372,7 @@ sac_mcp/
 │   ├── aggregation.py    # server-side GROUP BY via OData $apply
 │   ├── dataimport.py
 │   ├── dataactions.py    # planning data actions (list / inspect / trigger / poll)
+│   ├── fpa.py            # FP&A analysis: versions, variance, trend, completeness
 │   ├── public_dimensions.py
 │   ├── currency.py
 │   ├── difference.py     # delta tracking

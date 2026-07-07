@@ -33,6 +33,9 @@ async def test_all_tools_registered_with_correct_hints() -> None:
         # Data actions
         "list_data_actions", "get_data_action", "run_data_action",
         "list_data_action_executions", "get_data_action_status",
+        # FP&A analysis
+        "list_versions", "compare_versions", "measure_trend",
+        "check_data_completeness",
         # Models
         "list_models", "get_model_metadata", "list_dimensions", "list_measures",
         # Multi-action
@@ -92,6 +95,8 @@ async def test_all_tools_registered_with_correct_hints() -> None:
     assert by_name["get_data_action_status"].annotations.readOnlyHint is True
     assert by_name["get_job_invalid_rows"].annotations.readOnlyHint is True
     assert by_name["get_import_metadata"].annotations.readOnlyHint is True
+    assert by_name["compare_versions"].annotations.readOnlyHint is True
+    assert by_name["check_data_completeness"].annotations.readOnlyHint is True
 
 
 @pytest.mark.asyncio

@@ -55,6 +55,7 @@ def build_server(settings: Settings) -> FastMCP:
         dataexport,
         dataimport,
         difference,
+        fpa,
         models,
         monitoring,
         multiaction,
@@ -72,7 +73,7 @@ def build_server(settings: Settings) -> FastMCP:
 
     for module in (
         admin, aggregation, audit, calendar, content_network, dataactions,
-        dataexport, public_dimensions, difference, widget_query, smart_query,
+        dataexport, public_dimensions, difference, fpa, widget_query, smart_query,
         sql_query, dataimport, currency, models, monitoring, multiaction, resources_tools,
         stories, teams, users, catalog, tenant, audit_drilldown, explore_tenant,
         plan_writeback,

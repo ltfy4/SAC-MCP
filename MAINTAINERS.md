@@ -46,6 +46,7 @@ sac_mcp/
 │   ├── aggregation.py     # server-side GROUP BY via OData $apply
 │   ├── dataimport.py      # job lifecycle (create / upload / validate / run / status / cancel) + one-shot write_fact_data
 │   ├── dataactions.py     # planning data actions (list / inspect / trigger / poll)
+│   ├── fpa.py             # FP&A analysis: versions, variance, trend, completeness
 │   ├── difference.py      # snapshot delta between two date ranges
 │   ├── currency.py        # tenant currency conversion + exchange-rate reads
 │   ├── public_dimensions.py # public dimension members
