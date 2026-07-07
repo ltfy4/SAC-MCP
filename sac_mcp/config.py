@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     mcp_http_port: int = 8765
     mcp_http_bearer: SecretStr | None = None
     mcp_http_cors_origins: str = ""
+    # DNS-rebinding allowlist for the streamable-HTTP endpoint. Comma-separated
+    # Host header values (e.g. "sac-mcp:8765,mcp.example.internal"). Empty means
+    # disable the check — safe when bearer auth gates the endpoint and the port
+    # only listens on an internal network / behind a reverse proxy.
+    mcp_http_allowed_hosts: str = ""
 
     # Logging
     log_level: str = "INFO"
@@ -59,6 +64,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.mcp_http_cors_origins.split(",") if o.strip()]
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        return [h.strip() for h in self.mcp_http_allowed_hosts.split(",") if h.strip()]
 
     @property
     def tenant_url_str(self) -> str:

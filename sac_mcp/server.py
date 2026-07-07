@@ -9,6 +9,7 @@ server.
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from sac_mcp.client.http import SACClient
 from sac_mcp.config import Settings
@@ -16,6 +17,12 @@ from sac_mcp.config import Settings
 
 def build_server(settings: Settings) -> FastMCP:
     """Construct the FastMCP app with all tools/resources/prompts registered."""
+
+    allowed = settings.allowed_hosts_list
+    transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=bool(allowed),
+        allowed_hosts=allowed,
+    )
 
     server = FastMCP(
         name="sac-mcp",
@@ -27,6 +34,7 @@ def build_server(settings: Settings) -> FastMCP:
             "Content Network, Calendar Tasks and Multi-Action runs. Read tools "
             "are safe; tools that mutate the tenant are marked destructive."
         ),
+        transport_security=transport_security,
     )
 
     # Single shared client for the lifetime of the server process. Modules that
