@@ -4,7 +4,7 @@ Internal notes for maintainers and contributors working on **SAC-MCP** — the S
 
 ## What this project is
 
-A Python MCP server that exposes the full SAP Analytics Cloud (SAC) public API surface (Public REST, Data Export OData v4, Data Import jobs, SCIM users/teams, Content Network, Calendar Tasks, Multi-Action, Audit, Monitoring) as MCP tools, resources and prompts.
+A Python MCP server that exposes the full SAP Analytics Cloud (SAC) public API surface (Public REST, Data Export OData v4, Data Import jobs, SCIM users/teams, Content Network, Calendar Tasks, Data Actions, Multi-Action, Audit, Monitoring) as MCP tools, resources and prompts.
 
 It is consumed by any MCP-compatible client. Two transports are supported: `stdio` (local) and Streamable HTTP (remote / hosted).
 
@@ -44,7 +44,8 @@ sac_mcp/
 │   ├── models.py          # data-export Administration namespace
 │   ├── dataexport.py      # fact / master / audit OData reads (+ delta + CSV)
 │   ├── aggregation.py     # server-side GROUP BY via OData $apply
-│   ├── dataimport.py      # job lifecycle (create / upload / validate / run / status / cancel)
+│   ├── dataimport.py      # job lifecycle (create / upload / validate / run / status / cancel) + one-shot write_fact_data
+│   ├── dataactions.py     # planning data actions (list / inspect / trigger / poll)
 │   ├── difference.py      # snapshot delta between two date ranges
 │   ├── currency.py        # tenant currency conversion + exchange-rate reads
 │   ├── public_dimensions.py # public dimension members

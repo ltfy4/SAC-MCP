@@ -14,7 +14,7 @@ Deeper architectural notes for SAC-MCP. Shorter day-to-day rules live in `MAINTA
 ┌─────────────────────────▼────────────────────────────────────┐
 │                       FastMCP server                         │
 │  ─────────────────────────────────────────────────────────   │
-│   Tools (50+)        Resources (sac://...)     Prompts       │
+│   Tools (80+)        Resources (sac://...)     Prompts       │
 │  ─────────────────────────────────────────────────────────   │
 │                       SACClient (single)                     │
 │   OAuth (2-legged)  ·  CSRF cache  ·  retry/backoff          │
