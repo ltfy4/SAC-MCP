@@ -1,4 +1,15 @@
-"""Data Export Service tools — read fact, master and audit data via OData v4."""
+"""Data Export Service tools — read fact, master and audit data via OData v4.
+
+Entity sets per model (verified against a live tenant, service document at
+``/api/v1/dataexport/providers/sac/{model}/``):
+
+* ``FactData``                     — leaf-level fact rows
+* ``FactDataAggregation``          — facts aggregated over the ``$select``-ed columns
+* ``MasterData``                   — fact rows enriched with every dimension attribute
+* ``<Dimension>Master``            — members of one dimension (``ID``, ``Description``, attributes)
+* ``<Dimension>MasterWithHierarchy`` — the same, with hierarchy parent columns
+* ``AuditData``                    — only when data audit is enabled on the model
+"""
 
 from __future__ import annotations
 
@@ -9,12 +20,21 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
 from sac_mcp.client.odata import ODataQuery
-from sac_mcp.client.paths import seg
-from sac_mcp.tools._common import as_csv, compact, page_envelope, safe
+from sac_mcp.client.paths import des_path
+from sac_mcp.tools._common import as_csv, collect, compact, page_envelope, safe
+from sac_mcp.tools.difference import delta_read
+
+_READ = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
+
+
+def _clean_select(select: list[str] | None) -> list[str]:
+    """Strip whitespace — "Entity, Amount" produces a malformed-URI error in SAC."""
+
+    return [c.strip() for c in (select or []) if c and c.strip()]
 
 
 def register(server: FastMCP, client: SACClient) -> None:
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=_READ)
     @safe
     async def read_fact_data(
         model_id: str,
@@ -24,48 +44,41 @@ def register(server: FastMCP, client: SACClient) -> None:
         top: int = 100,
         skip: int | None = None,
     ) -> dict[str, Any]:
-        """Read fact data from a model via the OData Data Export Service.
+        """Read leaf-level fact rows from a model (OData ``FactData``).
 
         Args:
-            model_id: The model (provider) ID.
-            filter: Raw OData ``$filter`` expression, e.g. ``Year eq '2025'``.
-            select: Project to a subset of columns.
-            orderby: Sort columns (use ``"col desc"`` for descending).
-            top: Page size; the tool may follow ``@odata.nextLink`` until
-                ``top`` rows have been returned.
+            model_id: The model (provider) ID, e.g. from ``list_models``.
+            filter: OData ``$filter``, e.g. ``"Version eq 'public.Actual' and Date eq '202401'"``.
+            select: Columns to return. SAC requires **every** dimension (key)
+                column when selecting — to keep only some dimensions, use
+                ``read_aggregated_data`` instead, which sums over the others.
+            orderby: Sort columns, e.g. ``["LC_AMOUNT desc"]``.
+            top: Maximum rows to return (default 100).
             skip: Skip the first N rows server-side.
+
+        Returns ``{"rows", "row_count", "has_more"}``.
         """
 
-        q = ODataQuery(
-            filter=filter, select=select or [], orderby=orderby or [], top=top, skip=skip
+        q = ODataQuery(filter=filter, select=_clean_select(select), orderby=orderby or [], skip=skip)
+        rows, more = await collect(
+            client, des_path(model_id, "FactData"), params=q.to_params(), max_rows=top
         )
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Data",
-            params=q.to_params(),
-            max_rows=top,
-        ):
-            rows.append(r)
-        return page_envelope(compact(rows))
+        return page_envelope(compact(rows), has_more=more)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=_READ)
     @safe
     async def read_fact_data_delta(
         model_id: str, delta_token: str, top: int = 1000
     ) -> dict[str, Any]:
-        """Continue an incremental (delta) fact-data read using a previously
-        returned delta token. SAC supports delta extracts since Q4 2022."""
+        """Deprecated alias of ``get_delta_changes`` for ``FactData``.
 
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Data",
-            params={"$deltatoken": delta_token, "$top": str(top)},
-            max_rows=top,
-        ):
-            rows.append(r)
-        return page_envelope(compact(rows))
+        Returns the rows changed since ``delta_token`` (from ``init_delta_tracking``)
+        plus a new ``delta_token`` for the next call.
+        """
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+        return await delta_read(client, model_id, "FactData", delta_token, top)
+
+    @server.tool(annotations=_READ)
     @safe
     async def export_fact_data_csv(
         model_id: str,
@@ -74,22 +87,19 @@ def register(server: FastMCP, client: SACClient) -> None:
         orderby: list[str] | None = None,
         max_rows: int = 5000,
     ) -> dict[str, Any]:
-        """Read fact data and return it as a single CSV string (good for tables
-        too large to fit comfortably in a JSON response)."""
+        """Read fact rows and return them as one CSV string.
 
-        q = ODataQuery(
-            filter=filter, select=select or [], orderby=orderby or [], top=min(max_rows, 1000)
+        More compact than JSON for wide tables. The same ``select`` rule as
+        ``read_fact_data`` applies (all dimension columns, or none).
+        """
+
+        q = ODataQuery(filter=filter, select=_clean_select(select), orderby=orderby or [])
+        rows, more = await collect(
+            client, des_path(model_id, "FactData"), params=q.to_params(), max_rows=max_rows
         )
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Data",
-            params=q.to_params(),
-            max_rows=max_rows,
-        ):
-            rows.append(r)
-        return {"row_count": len(rows), "csv": as_csv(rows)}
+        return {"row_count": len(rows), "has_more": more, "csv": as_csv(rows)}
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=_READ)
     @safe
     async def read_master_data(
         model_id: str,
@@ -97,47 +107,65 @@ def register(server: FastMCP, client: SACClient) -> None:
         filter: str | None = None,
         top: int = 200,
     ) -> dict[str, Any]:
-        """Read master / dimension member data for a model.
+        """Read master data for a model.
 
-        If ``dimension`` is given, hits the dimension-specific endpoint;
-        otherwise reads the top-level MasterData entity set.
+        With ``dimension`` (e.g. ``"Account"``) returns that dimension's members
+        from ``<Dimension>Master``: ``ID``, ``Description`` and its attributes.
+        Without it, reads ``MasterData`` — fact rows enriched with every
+        dimension attribute (columns named ``<Dimension>___<Attribute>``).
+
+        Args:
+            model_id: The model (provider) ID.
+            dimension: Dimension name as used in fact data, e.g. ``"Version"``.
+            filter: OData ``$filter``, e.g. ``"startswith(ID,'CE')"``.
+            top: Maximum rows (default 200).
         """
 
-        path = f"/api/v1/dataexport/providers/sac/{seg(model_id)}/MasterData"
-        if dimension:
-            path = f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(dimension)}MasterData"
-        q = ODataQuery(filter=filter, top=top)
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(path, params=q.to_params(), max_rows=top):
-            rows.append(r)
-        return page_envelope(compact(rows))
+        entity = f"{dimension}Master" if dimension else "MasterData"
+        q = ODataQuery(filter=filter)
+        rows, more = await collect(
+            client, des_path(model_id, entity), params=q.to_params(), max_rows=top
+        )
+        return page_envelope(compact(rows), has_more=more)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=_READ)
     @safe
     async def list_dimension_members(
-        model_id: str, dimension: str, top: int = 200
+        model_id: str,
+        dimension: str,
+        top: int = 200,
+        with_hierarchy: bool = False,
     ) -> dict[str, Any]:
-        """Convenience: list members of one dimension for a model."""
+        """List the members of one dimension (``ID``, ``Description``, attributes).
 
-        return await read_master_data.__wrapped__(  # type: ignore[attr-defined]
-            model_id=model_id, dimension=dimension, top=top
-        )
+        Args:
+            model_id: The model (provider) ID.
+            dimension: Dimension name, e.g. ``"Account"`` or ``"Entity"``.
+                ``list_dimensions`` shows the names.
+            top: Maximum members (default 200).
+            with_hierarchy: Read ``<Dimension>MasterWithHierarchy`` to include
+                parent/hierarchy columns (only for dimensions with hierarchies).
+        """
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+        entity = f"{dimension}MasterWithHierarchy" if with_hierarchy else f"{dimension}Master"
+        rows, more = await collect(client, des_path(model_id, entity), max_rows=top)
+        return page_envelope(compact(rows), has_more=more)
+
+    @server.tool(annotations=_READ)
     @safe
     async def read_audit_data(
         model_id: str,
         filter: str | None = None,
         top: int = 200,
     ) -> dict[str, Any]:
-        """Read the audit log entries associated with a model's data changes."""
+        """Read the data-change audit trail of a model (``AuditData``).
 
-        q = ODataQuery(filter=filter, top=top)
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/AuditData",
-            params=q.to_params(),
-            max_rows=top,
-        ):
-            rows.append(r)
-        return page_envelope(compact(rows))
+        Requires data audit to be enabled in the model's preferences; otherwise
+        SAC answers with error 3905.
+        """
+
+        q = ODataQuery(filter=filter)
+        rows, more = await collect(
+            client, des_path(model_id, "AuditData"), params=q.to_params(), max_rows=top
+        )
+        return page_envelope(compact(rows), has_more=more)
