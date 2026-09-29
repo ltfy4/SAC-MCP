@@ -10,7 +10,7 @@ from sac_mcp.client.http import SACClient
 from sac_mcp.tools import difference
 
 TENANT = "https://tenant.example.com"
-MODEL_PATH = "/api/v1/dataexport/providers/sac/model1/Data"
+MODEL_PATH = "/api/v1/dataexport/providers/sac/model1/FactData"
 
 
 def _register(client: SACClient) -> dict[str, object]:
@@ -41,7 +41,7 @@ async def test_init_delta_tracking(
             json={
                 "value": [{"id": 1}],
                 "@odata.deltaLink": (
-                    f"{TENANT}{MODEL_PATH}?$deltatoken=TOKEN123"
+                    f"{TENANT}{MODEL_PATH}?deltaid=TOKEN123"
                 ),
             },
         )
@@ -67,7 +67,7 @@ async def test_get_delta_changes(
             200,
             json={
                 "value": [{"id": 2, "_op": "U"}],
-                "@odata.deltaLink": f"{TENANT}{MODEL_PATH}?$deltatoken=TOKEN456",
+                "@odata.deltaLink": f"{TENANT}{MODEL_PATH}?deltaid=TOKEN456",
             },
         )
 
@@ -79,7 +79,7 @@ async def test_get_delta_changes(
     )
     assert result["delta_token"] == "TOKEN456"
     assert result["row_count"] == 1
-    assert captured["params"]["$deltatoken"] == "TOKEN123"  # type: ignore[index]
+    assert captured["params"]["deltaid"] == "TOKEN123"  # type: ignore[index]
 
 
 @pytest.mark.asyncio
