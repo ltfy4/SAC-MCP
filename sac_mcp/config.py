@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     sac_max_retries: int = 4
     sac_page_size: int = 1000
     sac_max_rps: float = 10.0
+    # Upper bound on one tool result, in characters of JSON. Larger results are
+    # truncated (rows dropped, "truncated": true) instead of overflowing the
+    # client's context window. 0 disables the guard.
+    sac_response_char_limit: int = 100_000
 
     # MCP transport
     mcp_transport: Transport = "stdio"

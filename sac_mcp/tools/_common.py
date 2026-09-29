@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Iterable, Sequence
-from typing import Any
+import json
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from sac_mcp.client.errors import SACError
+from sac_mcp.config import get_settings
+
+if TYPE_CHECKING:
+    from sac_mcp.client.http import SACClient
 
 # Row count above which we prefer CSV/markdown instead of a JSON list.
 LARGE_ROW_THRESHOLD = 200
@@ -22,7 +27,7 @@ def safe(call):  # type: ignore[no-untyped-def]
 
     async def wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
         try:
-            return await call(*args, **kwargs)
+            return fit_response(await call(*args, **kwargs))
         except SACError as exc:
             return {"error": exc.to_tool_message(), "code": exc.code, "status": exc.status_code}
         except ValueError as exc:
@@ -110,10 +115,93 @@ def page_envelope(
     *,
     next_cursor: str | None = None,
     total: int | None = None,
+    has_more: bool | None = None,
 ) -> dict[str, Any]:
     env: dict[str, Any] = {"rows": rows, "row_count": len(rows)}
     if next_cursor:
         env["next_cursor"] = next_cursor
     if total is not None:
         env["total"] = total
+    if has_more is not None:
+        env["has_more"] = has_more
+        if has_more:
+            env["hint"] = "More rows exist — narrow the filter or raise top/max_rows."
     return env
+
+
+async def collect(
+    client: SACClient,
+    path: str,
+    *,
+    params: Mapping[str, Any] | None = None,
+    max_rows: int,
+    set_top: bool = True,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Read up to ``max_rows`` rows and report whether more exist.
+
+    Asks the server for one extra row (``$top=max_rows+1``) so ``has_more`` is
+    exact without an extra round trip.
+    """
+
+    max_rows = max(1, max_rows)
+    query = dict(params or {})
+    if set_top:
+        query["$top"] = str(max_rows + 1)
+    rows: list[dict[str, Any]] = []
+    async for row in client.paginate(path, params=query, max_rows=max_rows + 1):
+        rows.append(row)
+    return rows[:max_rows], len(rows) > max_rows
+
+
+def fit_response(result: Any) -> Any:
+    """Keep a tool result under ``SAC_RESPONSE_CHAR_LIMIT`` characters.
+
+    Drops trailing rows (or CSV lines) rather than letting a single call blow
+    the client's context window — a delta read once returned over 1 MB.
+    """
+
+    limit = get_settings().sac_response_char_limit
+    if limit <= 0 or not isinstance(result, dict):
+        return result
+    size = len(json.dumps(result, default=str))
+    if size <= limit:
+        return result
+    budget = limit - 400  # room for the note fields below
+
+    rows = result.get("rows")
+    if isinstance(rows, list) and rows:
+        lo, hi = 0, len(rows)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if len(json.dumps({**result, "rows": rows[:mid]}, default=str)) <= budget:
+                lo = mid
+            else:
+                hi = mid - 1
+        return {
+            **result,
+            "rows": rows[:lo],
+            "row_count": lo,
+            "has_more": True,
+            "truncated": True,
+            "note": (
+                f"Truncated to {lo} of {len(rows)} rows to stay under {limit} characters; "
+                "narrow the query (filter, select, top)."
+            ),
+        }
+
+    csv_text = result.get("csv")
+    if isinstance(csv_text, str):
+        cut = csv_text[:budget]
+        cut = cut[: cut.rfind("\n") + 1] if "\n" in cut else cut
+        return {
+            **result,
+            "csv": cut,
+            "truncated": True,
+            "note": f"CSV truncated to stay under {limit} characters; narrow the query.",
+        }
+
+    return {
+        "truncated": True,
+        "note": f"Result exceeded {limit} characters and was cut; narrow the query.",
+        "preview": json.dumps(result, default=str)[:budget],
+    }
