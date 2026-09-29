@@ -1,4 +1,4 @@
-"""Tests for the server-side aggregation tools."""
+"""Tests for the aggregation tools (FactDataAggregation + client-side ops)."""
 
 from __future__ import annotations
 
@@ -10,11 +10,12 @@ import respx
 
 from sac_mcp.client.http import SACClient
 from sac_mcp.tools import aggregation
-from sac_mcp.tools.aggregation import _build_apply
+from sac_mcp.tools.aggregation import _validate
 
 TENANT = "https://tenant.example.com"
 MODEL = "Sales"
-AGG_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/Aggregation"
+AGG_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/FactDataAggregation"
+FACT_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/FactData"
 
 
 def _register(client: SACClient) -> dict[str, Any]:
@@ -32,243 +33,126 @@ def _register(client: SACClient) -> dict[str, Any]:
     return captured
 
 
-# ---- _build_apply unit tests ------------------------------------------------
-
-
-def test_build_apply_with_group_by() -> None:
-    result = _build_apply(
-        ["Region", "Year"],
-        [{"column": "Amount", "op": "sum", "alias": "TotalAmount"}],
-    )
-    assert result == "groupby((Region,Year),aggregate(Amount with sum as TotalAmount))"
-
-
-def test_build_apply_without_group_by() -> None:
-    result = _build_apply(
-        [],
-        [{"column": "Amount", "op": "average", "alias": "AvgAmount"}],
-    )
-    assert result == "aggregate(Amount with average as AvgAmount)"
-
-
-def test_build_apply_multiple_aggregates() -> None:
-    result = _build_apply(
-        ["Region"],
-        [
-            {"column": "Revenue", "op": "sum", "alias": "TotalRevenue"},
-            {"column": "Quantity", "op": "max", "alias": "MaxQuantity"},
-        ],
-    )
-    assert result == (
-        "groupby((Region),aggregate(Revenue with sum as TotalRevenue, "
-        "Quantity with max as MaxQuantity))"
-    )
-
-
-def test_build_apply_invalid_op_raises() -> None:
-    with pytest.raises(ValueError, match="Invalid aggregation operator"):
-        _build_apply(["Region"], [{"column": "Amount", "op": "median", "alias": "Med"}])
-
-
-def test_build_apply_op_case_insensitive() -> None:
-    result = _build_apply([], [{"column": "Amount", "op": "SUM", "alias": "Total"}])
-    assert "with sum as" in result
-
-
-def test_build_apply_countdistinct() -> None:
-    result = _build_apply(
-        ["Product"],
-        [{"column": "CustomerId", "op": "countdistinct", "alias": "UniqueCustomers"}],
-    )
-    assert "CustomerId with countdistinct as UniqueCustomers" in result
-
-
-# ---- read_aggregated_data ---------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_read_aggregated_data_builds_correct_apply(
-    client: SACClient, respx_mock: respx.MockRouter
-) -> None:
+def _capture(respx_mock: respx.MockRouter, path: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": [{"Region": "EMEA", "TotalAmount": 100}]})
+        return httpx.Response(200, json={"value": rows})
 
-    respx_mock.get(AGG_PATH).mock(side_effect=handler)
+    respx_mock.get(path).mock(side_effect=handler)
+    return captured
 
+
+def test_validate_rejects_unknown_op() -> None:
+    with pytest.raises(ValueError, match="Invalid aggregation operator"):
+        _validate([{"column": "Amount", "op": "median", "alias": "Med"}])
+
+
+def test_validate_is_case_insensitive_and_defaults_alias() -> None:
+    assert _validate([{"column": "Amount", "op": "SUM"}]) == [
+        {"column": "Amount", "op": "sum", "alias": "SumAmount"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sum_runs_server_side_with_select(
+    client: SACClient, respx_mock: respx.MockRouter
+) -> None:
+    captured = _capture(respx_mock, AGG_PATH, [{"Region": "EMEA", "Amount": 100.0}])
     tools = _register(client)
     result = await tools["read_aggregated_data"](  # type: ignore[operator]
         model_id=MODEL,
         group_by=["Region"],
         aggregates=[{"column": "Amount", "op": "sum", "alias": "TotalAmount"}],
+        filter="Year eq '2026'",
+        orderby=["TotalAmount desc"],
         top=50,
     )
 
-    assert result["row_count"] == 1
-    assert result["rows"][0]["Region"] == "EMEA"
+    assert result["aggregation"] == "server"
+    assert result["rows"] == [{"Region": "EMEA", "TotalAmount": 100.0}]
     params = captured["params"]
-    assert params["$apply"] == "groupby((Region),aggregate(Amount with sum as TotalAmount))"
-    assert params["$top"] == "50"
+    assert params["$select"] == "Region,Amount"
+    assert params["$filter"] == "Year eq '2026'"
+    assert params["$orderby"] == "Amount desc"  # alias mapped back to the measure
+    assert params["$top"] == "51"  # one extra row detects has_more
+    assert "$apply" not in params  # SAC silently ignores $apply
 
 
 @pytest.mark.asyncio
-async def test_read_aggregated_data_passes_filter(
+async def test_has_more_when_server_returns_extra_row(
     client: SACClient, respx_mock: respx.MockRouter
 ) -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": []})
-
-    respx_mock.get(AGG_PATH).mock(side_effect=handler)
-
+    _capture(respx_mock, AGG_PATH, [{"Region": r, "Amount": 1} for r in "ABC"])
     tools = _register(client)
-    await tools["read_aggregated_data"](  # type: ignore[operator]
+    result = await tools["read_aggregated_data"](  # type: ignore[operator]
         model_id=MODEL,
         group_by=["Region"],
-        aggregates=[{"column": "Amount", "op": "sum", "alias": "TotalAmount"}],
-        filter="Year eq '2025'",
+        aggregates=[{"column": "Amount", "op": "sum", "alias": "T"}],
+        top=2,
     )
-
-    assert captured["params"]["$filter"] == "Year eq '2025'"
+    assert result["row_count"] == 2
+    assert result["has_more"] is True
 
 
 @pytest.mark.asyncio
-async def test_read_aggregated_data_passes_orderby(
+async def test_non_sum_ops_are_computed_client_side(
     client: SACClient, respx_mock: respx.MockRouter
 ) -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": []})
-
-    respx_mock.get(AGG_PATH).mock(side_effect=handler)
-
+    captured = _capture(
+        respx_mock,
+        FACT_PATH,
+        [
+            {"Region": "EMEA", "Amount": 10.0},
+            {"Region": "EMEA", "Amount": 30.0},
+            {"Region": "APJ", "Amount": 5.0},
+        ],
+    )
     tools = _register(client)
-    await tools["read_aggregated_data"](  # type: ignore[operator]
+    result = await tools["read_aggregated_data"](  # type: ignore[operator]
         model_id=MODEL,
         group_by=["Region"],
-        aggregates=[{"column": "Amount", "op": "sum", "alias": "TotalAmount"}],
-        orderby=["TotalAmount desc"],
+        aggregates=[
+            {"column": "Amount", "op": "average", "alias": "Avg"},
+            {"column": "Amount", "op": "max", "alias": "Max"},
+            {"column": "Amount", "op": "count", "alias": "N"},
+        ],
+        orderby=["Avg desc"],
     )
 
-    assert captured["params"]["$orderby"] == "TotalAmount desc"
-
-
-# ---- top_n_by_measure -------------------------------------------------------
+    assert result["aggregation"] == "client"
+    assert result["rows_scanned"] == 3
+    assert result["scan_truncated"] is False
+    assert result["rows"][0] == {"Region": "EMEA", "Avg": 20.0, "Max": 30.0, "N": 2}
+    assert result["rows"][1] == {"Region": "APJ", "Avg": 5.0, "Max": 5.0, "N": 1}
+    assert "$select" not in captured["params"]
 
 
 @pytest.mark.asyncio
-async def test_top_n_by_measure_builds_apply_with_orderby(
+async def test_top_n_by_measure_orders_by_measure(
     client: SACClient, respx_mock: respx.MockRouter
 ) -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": [{"Region": "EMEA", "SumAmount": 500}]})
-
-    respx_mock.get(AGG_PATH).mock(side_effect=handler)
-
+    captured = _capture(respx_mock, AGG_PATH, [{"Product": "P1", "Revenue": 9.0}])
     tools = _register(client)
     result = await tools["top_n_by_measure"](  # type: ignore[operator]
-        model_id=MODEL,
-        dimension="Region",
-        measure="Amount",
-        agg="sum",
-        direction="desc",
-        top=5,
+        model_id=MODEL, dimension="Product", measure="Revenue", direction="asc", top=5
     )
-
-    assert result["row_count"] == 1
-    params = captured["params"]
-    assert params["$apply"] == "groupby((Region),aggregate(Amount with sum as SumAmount))"
-    assert params["$orderby"] == "SumAmount desc"
-    assert params["$top"] == "5"
-
-
-@pytest.mark.asyncio
-async def test_top_n_by_measure_asc_direction(
-    client: SACClient, respx_mock: respx.MockRouter
-) -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": []})
-
-    respx_mock.get(AGG_PATH).mock(side_effect=handler)
-
-    tools = _register(client)
-    await tools["top_n_by_measure"](  # type: ignore[operator]
-        model_id=MODEL,
-        dimension="Product",
-        measure="Revenue",
-        agg="average",
-        direction="asc",
-        top=3,
-    )
-
-    params = captured["params"]
-    assert params["$orderby"] == "AverageRevenue asc"
-    assert "Revenue with average as AverageRevenue" in params["$apply"]
-
-
-# ---- aggregate_by_dimension -------------------------------------------------
+    assert result["rows"] == [{"Product": "P1", "SumRevenue": 9.0}]
+    assert captured["params"]["$orderby"] == "Revenue asc"
+    assert captured["params"]["$select"] == "Product,Revenue"
 
 
 @pytest.mark.asyncio
 async def test_aggregate_by_dimension_multiple_measures(
     client: SACClient, respx_mock: respx.MockRouter
 ) -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": [{"Region": "US", "SumRevenue": 1000, "SumCost": 400}]})
-
-    respx_mock.get(AGG_PATH).mock(side_effect=handler)
-
+    captured = _capture(
+        respx_mock, AGG_PATH, [{"Region": "EMEA", "Amount": 1.0, "Quantity": 2.0}]
+    )
     tools = _register(client)
     result = await tools["aggregate_by_dimension"](  # type: ignore[operator]
-        model_id=MODEL,
-        dimension="Region",
-        measures=["Revenue", "Cost"],
-        agg="sum",
+        model_id=MODEL, dimension="Region", measures=["Amount", "Quantity"]
     )
-
-    assert result["row_count"] == 1
-    params = captured["params"]
-    apply = params["$apply"]
-    assert "Revenue with sum as SumRevenue" in apply
-    assert "Cost with sum as SumCost" in apply
-    assert apply.startswith("groupby((Region),")
-
-
-@pytest.mark.asyncio
-async def test_aggregate_by_dimension_passes_filter(
-    client: SACClient, respx_mock: respx.MockRouter
-) -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": []})
-
-    respx_mock.get(AGG_PATH).mock(side_effect=handler)
-
-    tools = _register(client)
-    await tools["aggregate_by_dimension"](  # type: ignore[operator]
-        model_id=MODEL,
-        dimension="Product",
-        measures=["Amount"],
-        agg="min",
-        filter="Year eq '2024'",
-    )
-
-    assert captured["params"]["$filter"] == "Year eq '2024'"
-    assert "Amount with min as MinAmount" in captured["params"]["$apply"]
+    assert result["rows"] == [{"Region": "EMEA", "SumAmount": 1.0, "SumQuantity": 2.0}]
+    assert captured["params"]["$select"] == "Region,Amount,Quantity"

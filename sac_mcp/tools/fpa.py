@@ -20,9 +20,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
-from sac_mcp.client.paths import seg
-from sac_mcp.tools._common import page_envelope, safe
-from sac_mcp.tools.aggregation import _build_apply
+from sac_mcp.client.odata import and_, quote_odata_string
+from sac_mcp.client.paths import des_path
+from sac_mcp.tools._common import collect, page_envelope, safe
+from sac_mcp.tools.aggregation import aggregate
 
 
 def _num(value: Any) -> float | None:
@@ -36,56 +37,14 @@ def _num(value: Any) -> float | None:
         return None
 
 
-def _quote(value: str) -> str:
-    """OData string literal — single quotes are escaped by doubling."""
-
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _and(*filters: str | None) -> str | None:
-    parts = [f for f in filters if f]
-    if not parts:
-        return None
-    return " and ".join(f"({p})" for p in parts) if len(parts) > 1 else parts[0]
-
-
 def _member_id(row: dict[str, Any], dimension: str) -> str | None:
     """Best-effort extraction of a member ID from a master-data row."""
 
-    for key in ("ID", "Id", "id", dimension, f"{dimension}ID", f"{dimension}Id"):
+    for key in ("ID", "Id", "id", dimension, f"{dimension}___ID", f"{dimension}ID"):
         value = row.get(key)
         if value is not None:
             return str(value)
     return None
-
-
-async def _aggregate(
-    client: SACClient,
-    model_id: str,
-    group_by: list[str],
-    aggregates: list[dict[str, Any]],
-    *,
-    filter: str | None,
-    orderby: str | None = None,
-    top: int,
-) -> list[dict[str, Any]]:
-    params: dict[str, Any] = {
-        "$apply": _build_apply(group_by, aggregates),
-        "$top": str(top),
-    }
-    if filter:
-        params["$filter"] = filter
-    if orderby:
-        params["$orderby"] = orderby
-
-    rows: list[dict[str, Any]] = []
-    async for r in client.paginate(
-        f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Aggregation",
-        params=params,
-        max_rows=top,
-    ):
-        rows.append(r)
-    return rows
 
 
 def register(server: FastMCP, client: SACClient) -> None:
@@ -110,14 +69,10 @@ def register(server: FastMCP, client: SACClient) -> None:
             top: Maximum members to return (default 100).
         """
 
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(version_dimension)}MasterData",
-            params={"$top": str(top)},
-            max_rows=top,
-        ):
-            rows.append(r)
-        return page_envelope(rows)
+        rows, more = await collect(
+            client, des_path(model_id, f"{version_dimension}Master"), max_rows=top
+        )
+        return page_envelope(rows, has_more=more)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
@@ -150,7 +105,8 @@ def register(server: FastMCP, client: SACClient) -> None:
             version_dimension: Name of the version dimension (default ``Version``).
             agg: Aggregation function (default ``sum``).
             filter: Optional extra OData ``$filter`` applied to both reads,
-                e.g. ``"Year eq '2026'"``.
+                e.g. ``"Date ge '202601' and Account eq 'REVENUE'"``. On
+                account-based models always pin one account.
             top: Maximum members per version read (default 200).
 
         Returns:
@@ -162,15 +118,11 @@ def register(server: FastMCP, client: SACClient) -> None:
         spec = [{"column": measure, "op": agg, "alias": "Value"}]
 
         async def one_version(version: str) -> dict[tuple[str, ...], dict[str, Any]]:
-            version_filter = f"{version_dimension} eq {_quote(version)}"
-            rows = await _aggregate(
-                client,
-                model_id,
-                group_by,
-                spec,
-                filter=_and(version_filter, filter),
-                top=top,
+            version_filter = f"{version_dimension} eq {quote_odata_string(version)}"
+            result = await aggregate(
+                client, model_id, group_by, spec, filter=and_(version_filter, filter or ""), top=top
             )
+            rows = result["rows"]
             return {
                 tuple(str(r.get(d)) for d in group_by): r for r in rows
             }
@@ -226,16 +178,16 @@ def register(server: FastMCP, client: SACClient) -> None:
                 ``"Version eq 'public.Actual'"``.
         """
 
-        rows = await _aggregate(
+        result = await aggregate(
             client,
             model_id,
             [time_dimension],
             [{"column": measure, "op": agg, "alias": "Value"}],
             filter=filter,
-            orderby=f"{time_dimension} desc",
+            orderby=[f"{time_dimension} desc"],
             top=periods,
         )
-        rows.reverse()  # chronological
+        rows = list(reversed(result["rows"]))  # chronological
 
         trend: list[dict[str, Any]] = []
         prev: float | None = None
@@ -284,24 +236,21 @@ def register(server: FastMCP, client: SACClient) -> None:
             max_members: Maximum dimension members to check (default 1000).
         """
 
-        members: list[str] = []
-        async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(dimension)}MasterData",
-            params={"$top": str(max_members)},
-            max_rows=max_members,
-        ):
-            member = _member_id(r, dimension)
-            if member is not None:
-                members.append(member)
+        member_rows, _ = await collect(
+            client, des_path(model_id, f"{dimension}Master"), max_rows=max_members
+        )
+        members = [m for m in (_member_id(r, dimension) for r in member_rows) if m is not None]
 
-        booked_rows = await _aggregate(
+        # A group appears in FactDataAggregation only if it has booked data.
+        booked_result = await aggregate(
             client,
             model_id,
             [dimension],
-            [{"column": measure, "op": "count", "alias": "N"}],
+            [{"column": measure, "op": "sum", "alias": "N"}],
             filter=filter,
             top=max_members,
         )
+        booked_rows = booked_result["rows"]
         booked = {str(r.get(dimension)) for r in booked_rows if r.get(dimension) is not None}
 
         missing = [m for m in members if m not in booked]

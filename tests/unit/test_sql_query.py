@@ -48,7 +48,7 @@ def test_parse_simple_query_full() -> None:
         "SELECT col1, col2 FROM model WHERE Region eq 'EMEA' ORDER BY Date TOP 50"
     )
     assert parsed["filter"] == "Region eq 'EMEA'"
-    assert parsed["select"] == "col1, col2"
+    assert parsed["select"] == "col1,col2"  # spaces break SAC's URI parser
     assert parsed["orderby"] == "Date"
     assert parsed["top"] == 50
 
@@ -98,7 +98,7 @@ async def test_sql_query_routes_to_odata(
         return httpx.Response(200, json={"value": [{"id": 1}]})
 
     respx_mock.get(
-        f"{TENANT}/api/v1/dataexport/providers/sac/M1/Data"
+        f"{TENANT}/api/v1/dataexport/providers/sac/M1/FactData"
     ).mock(side_effect=handler)
 
     tools = _register(client)
@@ -108,14 +108,14 @@ async def test_sql_query_routes_to_odata(
     assert result["route"] == "odata_export"
     params = captured["params"]
     assert params["$filter"] == "Region eq 'EMEA'"  # type: ignore[index]
-    assert params["$top"] == "10"  # type: ignore[index]
+    assert params["$top"] == "11"  # type: ignore[index]
 
 
 @pytest.mark.asyncio
 async def test_sql_query_routes_to_widget_with_story(
     client: SACClient, respx_mock: respx.MockRouter
 ) -> None:
-    respx_mock.get(f"{TENANT}/widgetquery/getWidgetData").mock(
+    respx_mock.get(f"{TENANT}/api/v1/widgetquery/getWidgetData").mock(
         return_value=httpx.Response(200, json={"value": 100})
     )
     tools = _register(client)
@@ -137,10 +137,10 @@ async def test_sql_query_analytical_routes_to_aggregation(
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": [{"Region": "EMEA", "SumAmount": 100}]})
+        return httpx.Response(200, json={"value": [{"Region": "EMEA", "Amount": 100}]})
 
     respx_mock.get(
-        f"{TENANT}/api/v1/dataexport/providers/sac/M1/Aggregation"
+        f"{TENANT}/api/v1/dataexport/providers/sac/M1/FactDataAggregation"
     ).mock(side_effect=handler)
 
     tools = _register(client)
@@ -150,7 +150,7 @@ async def test_sql_query_analytical_routes_to_aggregation(
     assert result["route"] == "aggregation"
     assert result["row_count"] == 1
     params = captured["params"]
-    assert params["$apply"] == "groupby((Region),aggregate(Amount with sum as SumAmount))"  # type: ignore[index]
+    assert params["$select"] == "Region,Amount"  # type: ignore[index]
 
 
 @pytest.mark.asyncio
@@ -159,7 +159,7 @@ async def test_sql_query_analytical_groupby_only_falls_back_with_note(
 ) -> None:
     # GROUP BY without any aggregate function — no $apply can be built, falls back to OData note.
     respx_mock.get(
-        f"{TENANT}/api/v1/dataexport/providers/sac/M1/Data"
+        f"{TENANT}/api/v1/dataexport/providers/sac/M1/FactDataAggregation"
     ).mock(return_value=httpx.Response(200, json={"value": [{"id": 1}]}))
 
     tools = _register(client)

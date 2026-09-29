@@ -13,9 +13,9 @@ from sac_mcp.tools import fpa
 
 TENANT = "https://tenant.example.com"
 MODEL = "Finance"
-AGG_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/Aggregation"
-VERSION_MD_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/VersionMasterData"
-CC_MD_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/CostCenterMasterData"
+AGG_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/FactDataAggregation"
+VERSION_MD_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/VersionMaster"
+CC_MD_PATH = f"{TENANT}/api/v1/dataexport/providers/sac/{MODEL}/CostCenterMaster"
 
 
 def _register(client: SACClient) -> dict[str, Any]:
@@ -70,13 +70,13 @@ async def test_compare_versions_computes_variance(
         f = request.url.params["$filter"]
         if "public.Actual" in f:
             rows = [
-                {"CostCenter": "CC1", "Value": "120"},
-                {"CostCenter": "CC2", "Value": "80"},
+                {"CostCenter": "CC1", "Amount": "120"},
+                {"CostCenter": "CC2", "Amount": "80"},
             ]
         else:
             rows = [
-                {"CostCenter": "CC1", "Value": "100"},
-                {"CostCenter": "CC3", "Value": "50"},
+                {"CostCenter": "CC1", "Amount": "100"},
+                {"CostCenter": "CC3", "Amount": "50"},
             ]
         return httpx.Response(200, json={"value": rows})
 
@@ -143,9 +143,9 @@ async def test_measure_trend_orders_chronologically_and_computes_change(
             200,
             json={
                 "value": [
-                    {"Date": "202603", "Value": "150"},
-                    {"Date": "202602", "Value": "100"},
-                    {"Date": "202601", "Value": "80"},
+                    {"Date": "202603", "Amount": "150"},
+                    {"Date": "202602", "Amount": "100"},
+                    {"Date": "202601", "Amount": "80"},
                 ]
             },
         )
@@ -182,8 +182,8 @@ async def test_measure_trend_passes_orderby_and_top(
     )
 
     assert captured["params"]["$orderby"] == "Month desc"
-    assert captured["params"]["$top"] == "6"
-    assert "groupby((Month)" in captured["params"]["$apply"]
+    assert captured["params"]["$top"] == "7"  # one extra row detects has_more
+    assert captured["params"]["$select"] == "Month,Amount"
 
 
 # ---- check_data_completeness ------------------------------------------------
@@ -208,7 +208,7 @@ async def test_check_data_completeness_reports_missing_members(
     respx_mock.get(AGG_PATH).mock(
         return_value=httpx.Response(
             200,
-            json={"value": [{"CostCenter": "CC1", "N": 12}]},
+            json={"value": [{"CostCenter": "CC1", "Amount": 12}]},
         )
     )
 
