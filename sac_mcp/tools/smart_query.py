@@ -9,6 +9,7 @@ explicit confirmation step is the safety story.
 
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 from typing import Any
@@ -18,8 +19,9 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.errors import SACError
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.metadata import parse_edmx, split_fact_type
 from sac_mcp.client.odata import and_, eq, quote_odata_string
-from sac_mcp.client.paths import seg
+from sac_mcp.client.paths import des_path
 from sac_mcp.tools._common import safe
 
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
@@ -92,23 +94,26 @@ def _parse_metadata(payload: Any) -> tuple[list[str], list[str]]:
         return dimensions, measures
 
     if isinstance(payload, str):
+        # EDMX: FactData key properties are dimensions, the rest are measures.
+        # Legacy annotations (Role / sap:aggregation-role) still win if present.
         root = ET.fromstring(payload)
         for prop in root.iter():
-            tag = prop.tag.rsplit("}", 1)[-1]
-            if tag != "Property":
-                continue
-            name = prop.attrib.get("Name")
-            if not name:
+            if prop.tag.rsplit("}", 1)[-1] != "Property" or not prop.attrib.get("Name"):
                 continue
             role = (prop.attrib.get("Role") or "").lower()
-            sap_aggregation = prop.attrib.get(
+            sap_role = prop.attrib.get(
                 "{http://www.sap.com/Protocols/SAPData}aggregation-role", ""
             ).lower()
-            if role == "measure" or sap_aggregation == "measure":
-                measures.append(name)
-            else:
-                dimensions.append(name)
-        return dimensions, measures
+            if role == "measure" or sap_role == "measure":
+                measures.append(prop.attrib["Name"])
+        if measures:
+            dimensions = [
+                p.attrib["Name"] for p in root.iter()
+                if p.tag.rsplit("}", 1)[-1] == "Property" and p.attrib.get("Name")
+                and p.attrib["Name"] not in measures
+            ]
+            return dimensions, measures
+        return split_fact_type(parse_edmx(payload))
 
     raise ValueError(f"Unsupported $metadata payload type: {type(payload).__name__}")
 
@@ -318,9 +323,12 @@ def register(server: FastMCP, client: SACClient) -> None:
             and ``next_call`` (kwargs ready to pass to ``next_tool``).
         """
         try:
-            metadata = await client.get_json(
-                f"/api/v1/dataexport/providers/sac/{seg(model_id)}/$metadata"
+            # $metadata is XML; get_json would fail on it (the old bug).
+            _ctype, text = await client.get_text(
+                des_path(model_id) + "$metadata", accept="application/xml"
             )
+            stripped = text.lstrip()
+            metadata: Any = json.loads(stripped) if stripped.startswith("{") else text
         except SACError:
             raise
         except Exception as exc:
