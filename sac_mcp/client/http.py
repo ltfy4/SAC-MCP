@@ -11,6 +11,9 @@ A single :class:`SACClient` instance is shared by every tool. It handles:
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json as _jsonlib
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
@@ -20,7 +23,6 @@ import httpx
 from tenacity import (
     AsyncRetrying,
     RetryCallState,
-    RetryError,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -47,6 +49,7 @@ _DEFAULT_HEADERS = {
 
 class _RetryableHTTPStatus(Exception):
     def __init__(self, response: httpx.Response) -> None:
+        super().__init__(f"HTTP {response.status_code}")
         self.response = response
 
 
@@ -133,8 +136,16 @@ class SACClient:
             ):
                 with attempt:
                     return await self._send_once(method, path, params, json, content, headers)
-        except RetryError as exc:  # pragma: no cover - tenacity shouldn't reach here with reraise
-            raise exc.last_attempt.exception() from exc  # type: ignore[misc]
+        except _RetryableHTTPStatus as exc:
+            # Retries exhausted: surface SAC's own error, not an internal type
+            # that @safe cannot convert (the LLM would get a raw traceback).
+            raise from_response(exc.response) from None
+        except httpx.TransportError as exc:
+            raise SACError(
+                f"Network error talking to SAC ({type(exc).__name__}): {exc}. "
+                "Check that SAC_TENANT_URL and SAC_AUTH_URL are reachable from this host.",
+                code="transport_error",
+            ) from exc
         raise RuntimeError("unreachable")
 
     async def _send_once(
@@ -196,6 +207,10 @@ class SACClient:
 
     # -- typed helpers -------------------------------------------------
 
+    @property
+    def settings(self) -> Settings:
+        return self._settings
+
     async def get_json(
         self,
         path: str,
@@ -204,9 +219,40 @@ class SACClient:
         headers: Mapping[str, str] | None = None,
     ) -> Any:
         response = await self.request("GET", path, params=params, headers=headers)
-        if not response.content:
-            return None
-        return response.json()
+        return _decode_json(response)
+
+    async def get_text(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        accept: str = "*/*",
+    ) -> tuple[str, str]:
+        """GET a non-JSON resource (``$metadata`` XML, CSV exports).
+
+        Returns ``(content_type, body)``.
+        """
+
+        response = await self.request("GET", path, params=params, headers={"Accept": accept})
+        return response.headers.get("content-type", ""), response.text
+
+    async def token_claims(self) -> dict[str, Any]:
+        """Decode (without verifying) the claims of the current OAuth token.
+
+        Claims such as client_id, scopes and zone are not secret; the token
+        itself is never returned.
+        """
+
+        token = await self._tokens.get_token()
+        parts = token.split(".")
+        if len(parts) != 3:
+            return {}
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        try:
+            claims = _jsonlib.loads(base64.urlsafe_b64decode(payload))
+        except (ValueError, binascii.Error):
+            return {}
+        return claims if isinstance(claims, dict) else {}
 
     async def post_json(
         self,
@@ -226,15 +272,11 @@ class SACClient:
 
     async def put_json(self, path: str, *, json: Any) -> Any:
         response = await self.request("PUT", path, json=json)
-        if not response.content:
-            return None
-        return response.json()
+        return _decode_json(response)
 
     async def patch_json(self, path: str, *, json: Any) -> Any:
         response = await self.request("PATCH", path, json=json)
-        if not response.content:
-            return None
-        return response.json()
+        return _decode_json(response)
 
     async def delete(self, path: str) -> None:
         await self.request("DELETE", path)
@@ -260,6 +302,14 @@ class SACClient:
         rows_yielded = 0
         while next_path is not None:
             payload = await self.get_json(next_path, params=next_params)
+            if isinstance(payload, list):  # some Public REST endpoints return a bare array
+                for row in payload:
+                    if isinstance(row, dict):
+                        yield row
+                        rows_yielded += 1
+                        if max_rows is not None and rows_yielded >= max_rows:
+                            return
+                return
             if not isinstance(payload, dict):
                 return
             rows = payload.get(value_key) or payload.get("Resources") or []
@@ -305,6 +355,22 @@ class SACClient:
                 "x-sap-sac-custom-auth header and OAuth scope"
             )
         return token
+
+
+def _decode_json(response: httpx.Response) -> Any:
+    if not response.content:
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        ctype = response.headers.get("content-type", "")
+        raise SACError(
+            f"SAC returned a non-JSON response (content-type {ctype!r}) for "
+            f"{response.request.url.path}; this endpoint needs a different reader.",
+            status_code=response.status_code,
+            code="non_json_response",
+            details=response.text[:500],
+        ) from None
 
 
 @asynccontextmanager
