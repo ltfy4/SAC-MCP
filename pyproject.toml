@@ -17,10 +17,12 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "mcp[cli]>=1.2.0",
+    # mcp 2.x renamed FastMCP to MCPServer; migrate deliberately before lifting the cap.
+    "mcp[cli]>=1.9,<2",
     "httpx[http2]>=0.27",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
@@ -47,8 +49,8 @@ sac-mcp = "sac_mcp.__main__:main"
 sac-mcp-setup = "sac_mcp.setup_cli:main"
 
 [project.urls]
-Homepage = "https://github.com/ltfy4/sac-mcp"
-Issues = "https://github.com/ltfy4/sac-mcp/issues"
+Homepage = "https://github.com/ltfy4/SAC-MCP"
+Issues = "https://github.com/ltfy4/SAC-MCP/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sac_mcp"]

@@ -10,20 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
+          enable-cache: true
+      # --locked: fail if uv.lock is out of date instead of silently resolving
+      # newer (possibly breaking) dependency versions.
       - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --locked --extra dev
       - name: Lint
-        run: ruff check sac_mcp tests
+        run: uv run ruff check sac_mcp tests
       - name: Type check
-        run: mypy sac_mcp
+        run: uv run mypy sac_mcp
       - name: Unit tests
-        run: pytest tests/unit -q
+        run: uv run pytest tests/unit -q
