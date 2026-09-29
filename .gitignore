@@ -7,7 +7,8 @@ dist/
 .venv/
 venv/
 .env
-.env.local
+.env.*
+!.env.example
 .python-version
 .pytest_cache/
 .mypy_cache/
