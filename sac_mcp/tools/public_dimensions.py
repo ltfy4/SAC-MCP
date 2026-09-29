@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 _NAMESPACE = "sac_public_dimensions"
@@ -62,7 +63,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"{_BASE}/{dimension_id}/MasterData", params=params, max_rows=top
+            f"{_BASE}/{seg(dimension_id)}/MasterData", params=params, max_rows=top
         ):
             rows.append(r)
         return page_envelope(compact(rows))
@@ -82,7 +83,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"{_BASE}/{dimension_id}/MasterDataWithHierarchies",
+            f"{_BASE}/{seg(dimension_id)}/MasterDataWithHierarchies",
             params=params,
             max_rows=top,
         ):

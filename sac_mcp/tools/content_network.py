@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
 
@@ -67,4 +68,4 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_cn_job_status(job_id: str) -> dict[str, Any]:
         """Return the current status of a Content Network job."""
 
-        return await client.get_json(f"/api/v1/contentnetwork/jobs/{job_id}")
+        return await client.get_json(f"/api/v1/contentnetwork/jobs/{seg(job_id)}")

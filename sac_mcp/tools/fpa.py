@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import page_envelope, safe
 from sac_mcp.tools.aggregation import _build_apply
 
@@ -79,7 +80,7 @@ async def _aggregate(
 
     rows: list[dict[str, Any]] = []
     async for r in client.paginate(
-        f"/api/v1/dataexport/providers/sac/{model_id}/Aggregation",
+        f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Aggregation",
         params=params,
         max_rows=top,
     ):
@@ -111,7 +112,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{model_id}/{version_dimension}MasterData",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(version_dimension)}MasterData",
             params={"$top": str(top)},
             max_rows=top,
         ):
@@ -285,7 +286,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         members: list[str] = []
         async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{model_id}/{dimension}MasterData",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(dimension)}MasterData",
             params={"$top": str(max_members)},
             max_rows=max_members,
         ):

@@ -24,6 +24,7 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.errors import SACError
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import page_envelope, safe
 
 ImportKind = Literal["factData", "masterData"]
@@ -100,7 +101,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             body["defaultValues"] = default_values
 
         return await client.post_json(
-            f"/api/v1/dataimport/models/{model_id}/{kind}", json=body
+            f"/api/v1/dataimport/models/{seg(model_id)}/{seg(kind)}", json=body
         )
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -123,7 +124,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             # csv_text path: convert to JSON rows so we get consistent validation.
             rows = _parse_csv_rows(csv_text or "")
         return await client.post_json(
-            f"/api/v1/dataimport/jobs/{job_id}/data", json={"data": rows}
+            f"/api/v1/dataimport/jobs/{seg(job_id)}/data", json={"data": rows}
         )
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -131,28 +132,28 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def validate_job(job_id: str) -> dict[str, Any]:
         """Validate an import job (does not write to the model)."""
 
-        return await client.post_json(f"/api/v1/dataimport/jobs/{job_id}/validate")
+        return await client.post_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/validate")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
     async def run_job(job_id: str) -> dict[str, Any]:
         """Execute a previously-validated import job. **Mutates the model.**"""
 
-        return await client.post_json(f"/api/v1/dataimport/jobs/{job_id}/run")
+        return await client.post_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/run")
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
     async def get_job_status(job_id: str) -> dict[str, Any]:
         """Return the current status of an import job."""
 
-        return await client.get_json(f"/api/v1/dataimport/jobs/{job_id}/status")
+        return await client.get_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/status")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
     async def cancel_job(job_id: str) -> dict[str, Any]:
         """Cancel an in-progress import job."""
 
-        await client.delete(f"/api/v1/dataimport/jobs/{job_id}")
+        await client.delete(f"/api/v1/dataimport/jobs/{seg(job_id)}")
         return {"job_id": job_id, "cancelled": True}
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -161,7 +162,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """List recent import jobs for a model."""
 
         return await client.get_json(
-            f"/api/v1/dataimport/models/{model_id}/jobs", params={"$top": top}
+            f"/api/v1/dataimport/models/{seg(model_id)}/jobs", params={"$top": top}
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -195,7 +196,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             model_id: Target model (provider) ID.
         """
 
-        return await client.get_json(f"/api/v1/dataimport/models/{model_id}/metadata")
+        return await client.get_json(f"/api/v1/dataimport/models/{seg(model_id)}/metadata")
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
@@ -211,7 +212,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """
 
         payload = await client.get_json(
-            f"/api/v1/dataimport/jobs/{job_id}/invalidRows", params={"$top": top}
+            f"/api/v1/dataimport/jobs/{seg(job_id)}/invalidRows", params={"$top": top}
         )
         if isinstance(payload, list):
             return page_envelope(payload[:top])
@@ -277,7 +278,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             body["defaultValues"] = default_values
 
         created = await client.post_json(
-            f"/api/v1/dataimport/models/{model_id}/factData", json=body
+            f"/api/v1/dataimport/models/{seg(model_id)}/factData", json=body
         )
         job_id = _extract_job_id(created)
         if job_id is None:
@@ -292,12 +293,12 @@ def register(server: FastMCP, client: SACClient) -> None:
             chunk_size = max(1, chunk_size)
             for start in range(0, len(rows), chunk_size):
                 await client.post_json(
-                    f"/api/v1/dataimport/jobs/{job_id}/data",
+                    f"/api/v1/dataimport/jobs/{seg(job_id)}/data",
                     json={"data": rows[start : start + chunk_size]},
                 )
 
             validation = await client.post_json(
-                f"/api/v1/dataimport/jobs/{job_id}/validate"
+                f"/api/v1/dataimport/jobs/{seg(job_id)}/validate"
             )
             failed = _failed_row_count(validation)
             if failed > 0:
@@ -312,8 +313,8 @@ def register(server: FastMCP, client: SACClient) -> None:
                     ),
                 }
 
-            run_result = await client.post_json(f"/api/v1/dataimport/jobs/{job_id}/run")
-            status = await client.get_json(f"/api/v1/dataimport/jobs/{job_id}/status")
+            run_result = await client.post_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/run")
+            status = await client.get_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/status")
         except SACError as exc:
             return {
                 "error": exc.to_tool_message(),

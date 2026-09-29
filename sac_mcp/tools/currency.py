@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 _CCY = "/api/v1/currencyConversion"
@@ -44,7 +45,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_currency_table(table_id: str) -> dict[str, Any]:
         """Get the metadata for a single currency conversion table."""
 
-        result = await client.get_json(f"{_CCY}/{table_id}")
+        result = await client.get_json(f"{_CCY}/{seg(table_id)}")
         return result if isinstance(result, dict) else {"value": result}
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -52,7 +53,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_currency_rates(table_id: str, top: int = 200) -> dict[str, Any]:
         """List exchange rates stored in a currency conversion table."""
 
-        data = await client.get_json(f"{_CCY}/{table_id}/rates", params={"$top": top})
+        data = await client.get_json(f"{_CCY}/{seg(table_id)}/rates", params={"$top": top})
         return page_envelope(compact(_unwrap(data)))
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -70,7 +71,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             - rate: numeric exchange-rate value
         """
 
-        result = await client.post_json(f"{_CCY}/{table_id}/rates", json=rates)
+        result = await client.post_json(f"{_CCY}/{seg(table_id)}/rates", json=rates)
         if isinstance(result, dict):
             return result
         return {"result": result}
@@ -90,7 +91,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_unit_table(table_id: str) -> dict[str, Any]:
         """Get the metadata for a single unit conversion table."""
 
-        result = await client.get_json(f"{_UNIT}/{table_id}")
+        result = await client.get_json(f"{_UNIT}/{seg(table_id)}")
         return result if isinstance(result, dict) else {"value": result}
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -98,7 +99,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_unit_rates(table_id: str, top: int = 200) -> dict[str, Any]:
         """List conversion factors stored in a unit conversion table."""
 
-        data = await client.get_json(f"{_UNIT}/{table_id}/rates", params={"$top": top})
+        data = await client.get_json(f"{_UNIT}/{seg(table_id)}/rates", params={"$top": top})
         return page_envelope(compact(_unwrap(data)))
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -114,7 +115,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             - validFrom: ISO date the factor becomes effective
         """
 
-        result = await client.post_json(f"{_UNIT}/{table_id}/rates", json=rates)
+        result = await client.post_json(f"{_UNIT}/{seg(table_id)}/rates", json=rates)
         if isinstance(result, dict):
             return result
         return {"result": result}
@@ -134,7 +135,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{model_id}/CurrencyData",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/CurrencyData",
             params=params,
             max_rows=top,
         ):

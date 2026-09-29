@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
 
@@ -32,7 +33,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         if parameters:
             body["parameters"] = parameters
         return await client.post_json(
-            f"/api/v1/multiaction/multiactions/{multi_action_id}/runs", json=body
+            f"/api/v1/multiaction/multiactions/{seg(multi_action_id)}/runs", json=body
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -40,4 +41,4 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_multi_action_run_status(run_id: str) -> dict[str, Any]:
         """Return the status of a Multi-Action run."""
 
-        return await client.get_json(f"/api/v1/multiaction/runs/{run_id}")
+        return await client.get_json(f"/api/v1/multiaction/runs/{seg(run_id)}")

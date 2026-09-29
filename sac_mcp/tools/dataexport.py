@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
 from sac_mcp.client.odata import ODataQuery
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import as_csv, compact, page_envelope, safe
 
 
@@ -40,7 +41,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         )
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{model_id}/Data",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Data",
             params=q.to_params(),
             max_rows=top,
         ):
@@ -57,7 +58,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{model_id}/Data",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Data",
             params={"$deltatoken": delta_token, "$top": str(top)},
             max_rows=top,
         ):
@@ -81,7 +82,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         )
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{model_id}/Data",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Data",
             params=q.to_params(),
             max_rows=max_rows,
         ):
@@ -102,9 +103,9 @@ def register(server: FastMCP, client: SACClient) -> None:
         otherwise reads the top-level MasterData entity set.
         """
 
-        path = f"/api/v1/dataexport/providers/sac/{model_id}/MasterData"
+        path = f"/api/v1/dataexport/providers/sac/{seg(model_id)}/MasterData"
         if dimension:
-            path = f"/api/v1/dataexport/providers/sac/{model_id}/{dimension}MasterData"
+            path = f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(dimension)}MasterData"
         q = ODataQuery(filter=filter, top=top)
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(path, params=q.to_params(), max_rows=top):
@@ -134,7 +135,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         q = ODataQuery(filter=filter, top=top)
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{model_id}/AuditData",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/AuditData",
             params=q.to_params(),
             max_rows=top,
         ):

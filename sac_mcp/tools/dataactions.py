@@ -25,6 +25,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 
@@ -65,7 +66,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             data_action_id: The Data Action ID (from ``list_data_actions``).
         """
 
-        return await client.get_json(f"/api/v1/dataactions/{data_action_id}")
+        return await client.get_json(f"/api/v1/dataactions/{seg(data_action_id)}")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
@@ -89,7 +90,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         if parameter_values:
             body["parameterValues"] = parameter_values
         return await client.post_json(
-            f"/api/v1/dataactions/{data_action_id}/executions", json=body
+            f"/api/v1/dataactions/{seg(data_action_id)}/executions", json=body
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -106,7 +107,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/dataactions/{data_action_id}/executions",
+            f"/api/v1/dataactions/{seg(data_action_id)}/executions",
             params={"$top": top},
             max_rows=top,
         ):
@@ -123,5 +124,5 @@ def register(server: FastMCP, client: SACClient) -> None:
         """
 
         return await client.get_json(
-            f"/api/v1/dataactions/executions/{execution_id}"
+            f"/api/v1/dataactions/executions/{seg(execution_id)}"
         )
