@@ -129,7 +129,7 @@ async def test_malformed_metadata_returns_error_dict(
     )
 
     assert "error" in result
-    assert result["code"] in {"metadata_parse_failed", "metadata_fetch_failed", "non_json_response"}
+    assert result["code"] in {"metadata_parse_failed", "metadata_fetch_failed"}
     assert not data_route.called
 
 
