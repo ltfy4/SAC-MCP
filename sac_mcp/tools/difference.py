@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 
@@ -59,7 +60,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             params["$filter"] = filter
 
         payload = await client.get_json(
-            f"/api/v1/dataexport/providers/sac/{model_id}/{entity}",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(entity)}",
             params=params,
             headers={"Prefer": "odata.track-changes"},
         )
@@ -84,7 +85,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """Get only the rows that changed since the delta token was issued."""
 
         payload = await client.get_json(
-            f"/api/v1/dataexport/providers/sac/{model_id}/{entity}",
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(entity)}",
             params={"$deltatoken": delta_token},
         )
         if not isinstance(payload, dict):

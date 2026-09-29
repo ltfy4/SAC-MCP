@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
 
@@ -32,7 +33,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_user(user_id: str) -> dict[str, Any]:
         """Return one SCIM user by internal ID."""
 
-        return await client.get_json(f"/api/v1/scim/Users/{user_id}")
+        return await client.get_json(f"/api/v1/scim/Users/{seg(user_id)}")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
@@ -68,7 +69,7 @@ def register(server: FastMCP, client: SACClient) -> None:
                 "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
                 **patch,
             }
-        return await client.patch_json(f"/api/v1/scim/Users/{user_id}", json=patch)
+        return await client.patch_json(f"/api/v1/scim/Users/{seg(user_id)}", json=patch)
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
@@ -79,4 +80,4 @@ def register(server: FastMCP, client: SACClient) -> None:
             "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
             "Operations": [{"op": "replace", "path": "active", "value": False}],
         }
-        return await client.patch_json(f"/api/v1/scim/Users/{user_id}", json=body)
+        return await client.patch_json(f"/api/v1/scim/Users/{seg(user_id)}", json=body)

@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 _ANALYTICAL_RE = re.compile(
@@ -160,7 +161,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         analytical = _is_analytical(query)
         entity_set = _ENTITY_SET.get(entity, entity)
-        odata_path = f"/api/v1/dataexport/providers/sac/{model_id}/{entity_set}"
+        odata_path = f"/api/v1/dataexport/providers/sac/{seg(model_id)}/{seg(entity_set)}"
 
         if analytical and story_id and widget_id:
             result = await client.get_json(
@@ -215,7 +216,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
                 agg_rows: list[dict[str, Any]] = []
                 async for r in client.paginate(
-                    f"/api/v1/dataexport/providers/sac/{model_id}/Aggregation",
+                    f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Aggregation",
                     params=agg_params,
                     max_rows=int(agg_params["$top"]),
                 ):

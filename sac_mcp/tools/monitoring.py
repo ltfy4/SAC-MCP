@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
 from sac_mcp.client.odata import ODataQuery, gt
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 
@@ -45,7 +46,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         Args:
             model_id: The SAC model ID.
         """
-        return await client.get_json(f"/api/v1/monitoring/models/{model_id}")
+        return await client.get_json(f"/api/v1/monitoring/models/{seg(model_id)}")
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
@@ -65,7 +66,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         q = ODataQuery(filter=f, top=top)
         rows: list[dict[str, Any]] = []
         async for r in client.paginate(
-            f"/api/v1/monitoring/models/{model_id}/jobHistory",
+            f"/api/v1/monitoring/models/{seg(model_id)}/jobHistory",
             params=q.to_params(),
             max_rows=top,
         ):

@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
 from sac_mcp.client.odata import ODataQuery, contains
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 _ADMIN = "/api/v1/dataexport/administration/Namespaces('sac')/Providers"
@@ -39,7 +40,7 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         # Provider-level $metadata describes the EntitySet for one model.
         return await client.get_json(
-            f"/api/v1/dataexport/providers/sac/{model_id}/$metadata"
+            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/$metadata"
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -47,11 +48,11 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def list_dimensions(model_id: str) -> dict[str, Any]:
         """List the dimension attributes available for a model."""
 
-        meta = await client.get_json(f"/api/v1/dataexport/providers/sac/{model_id}/$metadata")
+        meta = await client.get_json(f"/api/v1/dataexport/providers/sac/{seg(model_id)}/$metadata")
         # SAC also exposes a friendly Properties endpoint when available.
         try:
             props = await client.get_json(
-                f"/api/v1/dataexport/providers/sac/{model_id}/Properties"
+                f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Properties"
             )
         except Exception:
             props = None
@@ -64,12 +65,12 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         try:
             measures = await client.get_json(
-                f"/api/v1/dataexport/providers/sac/{model_id}/Measures"
+                f"/api/v1/dataexport/providers/sac/{seg(model_id)}/Measures"
             )
             return {"model_id": model_id, "measures": measures}
         except Exception:
             # Fallback: project measures from $metadata.
             meta = await client.get_json(
-                f"/api/v1/dataexport/providers/sac/{model_id}/$metadata"
+                f"/api/v1/dataexport/providers/sac/{seg(model_id)}/$metadata"
             )
             return {"model_id": model_id, "metadata": meta}

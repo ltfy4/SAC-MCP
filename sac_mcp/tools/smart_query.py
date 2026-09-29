@@ -19,6 +19,7 @@ from mcp.types import ToolAnnotations
 from sac_mcp.client.errors import SACError
 from sac_mcp.client.http import SACClient
 from sac_mcp.client.odata import and_, eq, quote_odata_string
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
@@ -318,7 +319,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """
         try:
             metadata = await client.get_json(
-                f"/api/v1/dataexport/providers/sac/{model_id}/$metadata"
+                f"/api/v1/dataexport/providers/sac/{seg(model_id)}/$metadata"
             )
         except SACError:
             raise

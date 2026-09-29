@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
 
@@ -29,7 +30,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_team(team_id: str) -> dict[str, Any]:
         """Return one team / group by ID."""
 
-        return await client.get_json(f"/api/v1/scim/Groups/{team_id}")
+        return await client.get_json(f"/api/v1/scim/Groups/{seg(team_id)}")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
@@ -42,7 +43,7 @@ def register(server: FastMCP, client: SACClient) -> None:
                 {"op": "add", "path": "members", "value": [{"value": user_id}]}
             ],
         }
-        return await client.patch_json(f"/api/v1/scim/Groups/{team_id}", json=body)
+        return await client.patch_json(f"/api/v1/scim/Groups/{seg(team_id)}", json=body)
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
@@ -60,4 +61,4 @@ def register(server: FastMCP, client: SACClient) -> None:
                 }
             ],
         }
-        return await client.patch_json(f"/api/v1/scim/Groups/{team_id}", json=body)
+        return await client.patch_json(f"/api/v1/scim/Groups/{seg(team_id)}", json=body)

@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
 from sac_mcp.client.odata import eq
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
 TaskStatus = Literal["Open", "InProgress", "Completed", "Cancelled"]
@@ -39,7 +40,7 @@ def register(server: FastMCP, client: SACClient) -> None:
     async def get_calendar_task(task_id: str) -> dict[str, Any]:
         """Return one calendar task by ID."""
 
-        return await client.get_json(f"/api/v1/calendar/tasks/{task_id}")
+        return await client.get_json(f"/api/v1/calendar/tasks/{seg(task_id)}")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
@@ -47,7 +48,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """Set the status of a calendar task."""
 
         return await client.patch_json(
-            f"/api/v1/calendar/tasks/{task_id}", json={"status": status}
+            f"/api/v1/calendar/tasks/{seg(task_id)}", json={"status": status}
         )
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -56,5 +57,5 @@ def register(server: FastMCP, client: SACClient) -> None:
         """Append a comment to a calendar task."""
 
         return await client.post_json(
-            f"/api/v1/calendar/tasks/{task_id}/comments", json={"text": comment}
+            f"/api/v1/calendar/tasks/{seg(task_id)}/comments", json={"text": comment}
         )

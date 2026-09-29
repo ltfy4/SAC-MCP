@@ -29,6 +29,7 @@ from tenacity import (
 from sac_mcp.client.auth import OAuthTokenProvider
 from sac_mcp.client.csrf import CsrfTokenCache
 from sac_mcp.client.errors import SACError, from_response
+from sac_mcp.client.paths import with_query
 from sac_mcp.client.ratelimit import TokenBucket
 from sac_mcp.config import Settings
 from sac_mcp.logging import get_logger
@@ -157,8 +158,12 @@ class SACClient:
 
         _log.debug("sac.request", method=method, path=path, params=params)
 
+        # Encode the query ourselves: httpx's params= form-encodes spaces as "+",
+        # which SAC's file repository rejects, and it replaces any query string
+        # already present in ``path``.
+        url = with_query(path, params)
         response = await self._http.request(
-            method, path, params=params, json=json, content=content, headers=merged
+            method, url, json=json, content=content, headers=merged
         )
 
         # 401 -> bad token, refresh once and retry
@@ -166,7 +171,7 @@ class SACClient:
             await self._tokens.invalidate()
             merged["Authorization"] = f"Bearer {await self._tokens.get_token()}"
             response = await self._http.request(
-                method, path, params=params, json=json, content=content, headers=merged
+                method, url, json=json, content=content, headers=merged
             )
 
         # 403 with CSRF hint -> refresh CSRF and retry once
@@ -178,7 +183,7 @@ class SACClient:
             await self._csrf.invalidate()
             merged["x-csrf-token"] = await self._csrf.get(force_refresh=True)
             response = await self._http.request(
-                method, path, params=params, json=json, content=content, headers=merged
+                method, url, json=json, content=content, headers=merged
             )
 
         if response.status_code in (429, 502, 503, 504):

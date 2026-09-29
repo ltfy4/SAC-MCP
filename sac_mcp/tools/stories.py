@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import compact, page_envelope, safe
 
 
@@ -40,7 +41,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """Return a single story by ID, including referenced models."""
 
         return await client.get_json(
-            f"/api/v1/stories/{story_id}", params={"include": "models"}
+            f"/api/v1/stories/{seg(story_id)}", params={"include": "models"}
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -65,7 +66,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """Return the list of models referenced by a story."""
 
         story = await client.get_json(
-            f"/api/v1/stories/{story_id}", params={"include": "models"}
+            f"/api/v1/stories/{seg(story_id)}", params={"include": "models"}
         )
         models = story.get("models") if isinstance(story, dict) else None
         return {"story_id": story_id, "models": models or []}

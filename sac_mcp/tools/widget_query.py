@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
+from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
 
@@ -55,7 +56,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """
 
         story = await client.get_json(
-            f"/api/v1/stories/{story_id}", params={"include": "widgets,models"}
+            f"/api/v1/stories/{seg(story_id)}", params={"include": "widgets,models"}
         )
         widgets: list[dict[str, Any]] = []
         if isinstance(story, dict):
