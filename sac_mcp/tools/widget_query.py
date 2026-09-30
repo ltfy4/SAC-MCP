@@ -37,7 +37,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """
 
         result = await client.get_json(
-            "/widgetquery/getWidgetData",
+            "/api/v1/widgetquery/getWidgetData",
             params={"storyId": story_id, "widgetId": widget_id, "type": type},
         )
         if isinstance(result, dict):

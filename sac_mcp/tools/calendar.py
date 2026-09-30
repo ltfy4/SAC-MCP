@@ -1,4 +1,9 @@
-"""Calendar / planning task tools."""
+"""Calendar tools (``/api/v1/calendar/events``).
+
+Verified live: ``GET /api/v1/calendar/events`` answers 405 — SAC has no
+endpoint that lists calendar events, so there is no list tool. Single events
+are read and updated by ID; task comments have no public endpoint.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
-from sac_mcp.client.odata import eq
 from sac_mcp.client.paths import seg
 from sac_mcp.tools._common import safe
 
@@ -16,46 +20,25 @@ TaskStatus = Literal["Open", "InProgress", "Completed", "Cancelled"]
 
 
 def register(server: FastMCP, client: SACClient) -> None:
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    @safe
-    async def list_calendar_tasks(
-        assignee: str | None = None,
-        status: TaskStatus | None = None,
-        top: int = 100,
-    ) -> dict[str, Any]:
-        """List calendar tasks, optionally filtered by assignee or status."""
+    read = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
 
-        params: dict[str, Any] = {"$top": top}
-        clauses = []
-        if assignee:
-            clauses.append(eq("AssigneeId", assignee))
-        if status:
-            clauses.append(eq("Status", status))
-        if clauses:
-            params["$filter"] = " and ".join(clauses)
-        return await client.get_json("/api/v1/calendar/tasks", params=params)
-
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=read)
     @safe
     async def get_calendar_task(task_id: str) -> dict[str, Any]:
-        """Return one calendar task by ID."""
+        """Return one calendar event (task or process) by its event ID."""
 
-        return await client.get_json(f"/api/v1/calendar/tasks/{seg(task_id)}")
+        return await client.get_json(f"/api/v1/calendar/events/{seg(task_id)}")
 
-    @server.tool(annotations=ToolAnnotations(destructiveHint=True))
+    @server.tool(annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True))
     @safe
     async def update_task_status(task_id: str, status: TaskStatus) -> dict[str, Any]:
-        """Set the status of a calendar task."""
+        """Set the status of a calendar event. **Mutates the tenant.**
 
-        return await client.patch_json(
-            f"/api/v1/calendar/tasks/{seg(task_id)}", json={"status": status}
+        Sends ``PATCH /api/v1/calendar/events/{id}``; SAC rejects the change
+        with 400 if the event type does not allow that status.
+        """
+
+        result = await client.patch_json(
+            f"/api/v1/calendar/events/{seg(task_id)}", json={"status": status}
         )
-
-    @server.tool(annotations=ToolAnnotations(destructiveHint=True))
-    @safe
-    async def add_task_comment(task_id: str, comment: str) -> dict[str, Any]:
-        """Append a comment to a calendar task."""
-
-        return await client.post_json(
-            f"/api/v1/calendar/tasks/{seg(task_id)}/comments", json={"text": comment}
-        )
+        return result if isinstance(result, dict) else {"ok": True}

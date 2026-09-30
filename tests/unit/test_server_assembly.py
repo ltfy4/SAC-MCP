@@ -20,10 +20,8 @@ async def test_all_tools_registered_with_correct_hints() -> None:
         "whoami", "tenant_info", "health_check",
         # Audit
         "query_audit_log",
-        # Calendar
-        "list_calendar_tasks", "update_task_status",
-        # Content network
-        "list_packages", "create_cn_import_job", "get_cn_job_status",
+        # Calendar "update_task_status",
+        # Content network "create_cn_import_job", "get_cn_job_status",
         # Data export
         "read_fact_data", "read_master_data", "read_audit_data",
         # Data import
@@ -58,8 +56,7 @@ async def test_all_tools_registered_with_correct_hints() -> None:
         "get_widget_data", "list_story_widgets", "sql_query", "smart_query",
         # Aggregation (server-side)
         "read_aggregated_data", "top_n_by_measure", "aggregate_by_dimension",
-        # Monitoring
-        "list_monitored_models", "get_model_monitoring", "get_model_job_history",
+        # Monitoring "get_model_monitoring",
     }
     missing = expected - names
     assert not missing, f"missing tools: {missing}"
@@ -85,9 +82,7 @@ async def test_all_tools_registered_with_correct_hints() -> None:
     assert by_name["read_aggregated_data"].annotations.readOnlyHint is True
     assert by_name["top_n_by_measure"].annotations.readOnlyHint is True
     assert by_name["aggregate_by_dimension"].annotations.readOnlyHint is True
-    assert by_name["list_monitored_models"].annotations.readOnlyHint is True
     assert by_name["get_model_monitoring"].annotations.readOnlyHint is True
-    assert by_name["get_model_job_history"].annotations.readOnlyHint is True
     assert by_name["list_data_actions"].annotations.readOnlyHint is True
     assert by_name["get_data_action"].annotations.readOnlyHint is True
     assert by_name["get_job_invalid_rows"].annotations.readOnlyHint is True

@@ -37,7 +37,7 @@ async def test_get_widget_data(
         captured["params"] = dict(request.url.params)
         return httpx.Response(200, json={"value": 42, "unit": "USD"})
 
-    respx_mock.get(f"{TENANT}/widgetquery/getWidgetData").mock(side_effect=handler)
+    respx_mock.get(f"{TENANT}/api/v1/widgetquery/getWidgetData").mock(side_effect=handler)
 
     tools = _register(client)
     result = await tools["get_widget_data"](  # type: ignore[operator]
