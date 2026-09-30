@@ -28,7 +28,7 @@ def seg(value: object) -> str:
     text = str(value)
     if text in ("", ".", ".."):
         raise ValueError(f"Invalid identifier {text!r}")
-    return quote(text, safe="")
+    return quote(text, safe=":")
 
 
 def des_path(model_id: str, entity: str = "") -> str:
