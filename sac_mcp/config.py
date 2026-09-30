@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     # HTTP behaviour
     sac_request_timeout: float = 60.0
     sac_max_retries: int = 4
-    sac_page_size: int = 1000
     sac_max_rps: float = 10.0
     # Upper bound on one tool result, in characters of JSON. Larger results are
     # truncated (rows dropped, "truncated": true) instead of overflowing the

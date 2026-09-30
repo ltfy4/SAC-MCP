@@ -45,7 +45,7 @@ For a server that wraps ~50 endpoints, the boilerplate savings are worth a small
 
 - A shared `httpx.AsyncClient` reuses connections (HTTP/2 multiplexing on a single TCP connection is a big win against a SAC tenant on the other side of an Atlantic link).
 - One token cache, one CSRF cache, one rate-limit bucket. Two clients would mean two OAuth refreshes, double rate, race-y CSRF state.
-- The client is created in `build_server(settings)` and closed when the server process exits.
+- The client is created in `build_server(settings)` and lives as long as the process. Every MCP session shares it, so no session may close it; the OS releases its connections at exit.
 
 ## Auth flow (2-legged client_credentials)
 
@@ -117,6 +117,29 @@ SAC returns at least three error envelopes:
 | Other 4xx | Raise `SACError` immediately — no retry |
 | 5xx other than the above | Raise `SACError` (tenacity does not retry these) |
 
+## URL building
+
+Every ID placed in a URL path goes through `seg()` (`client/paths.py`), which
+percent-encodes `/` and rejects `.`/`..`. httpx resolves dot segments, so an
+unencoded, LLM-supplied ID could otherwise reach another endpoint with the
+same method. Query strings are encoded by `with_query()` with `%20` for
+spaces, because the file repository rejects the form-style `+`.
+
+## Aggregation strategy
+
+SAC ignores OData `$apply`. `FactDataAggregation` with
+`$select=<dimensions>,<measures>` aggregates server-side (the measure's own
+aggregation, SUM for amounts), so `sum` goes there. Other operators are
+computed in `tools/aggregation.py` over a bounded number of `FactData` rows,
+and the result says so (`aggregation: "client"`, `rows_scanned`,
+`scan_truncated`).
+
+## Response size guard
+
+`@safe` passes every result through `fit_response()`. Results above
+`SAC_RESPONSE_CHAR_LIMIT` characters lose trailing rows and are marked
+`truncated` instead of overflowing the client's context window.
+
 ## Rate limiting
 
 A single `TokenBucket(rate=SAC_MAX_RPS)` gates every request. This is local-only — SAC's own quotas are tenant-wide, but local limiting prevents an LLM agent from hammering SAC during a buggy loop.
@@ -144,9 +167,9 @@ Both transports consume the same `FastMCP` instance built by `build_server()`.
 
 ## Notable feature subsystems
 
-- **Server-side aggregation** — `read_aggregated_data`, `top_n_by_measure`, `aggregate_by_dimension` (in `tools/aggregation.py`) emit OData v4 `$apply=groupby((dims),aggregate(...))` expressions and read the per-model `/Aggregation` entity. Aggregation runs inside the tenant; the server only sees pre-aggregated rows. This keeps result sets small enough to stay in the LLM context even on large fact tables.
-- **Model monitoring** — `list_monitored_models`, `get_model_monitoring`, `get_model_job_history` (in `tools/monitoring.py`) hit `/api/v1/monitoring/models/...` to answer "is my data fresh", "when did this model last load", "how big is this model". Useful for daily-health-check style prompts.
-- **SQL-like router** — `sql_query` (in `tools/sql_query.py`) parses a SQL-flavoured input and routes to one of three back ends: Aggregation entity (explicit aggregate functions), Widget Query API (when `story_id`+`widget_id` are provided), or plain OData (everything else). Lets a user write "SUM(Amount) GROUP BY Region WHERE Year eq '2024'" and get server-side aggregation without picking the right tool by hand.
+- **Aggregation** -- `read_aggregated_data`, `top_n_by_measure`, `aggregate_by_dimension` (in `tools/aggregation.py`) send `sum` to `FactDataAggregation` with `$select` and compute other operators client-side; see *Aggregation strategy* above.
+- **Model monitoring** -- `get_model_monitoring` (in `tools/monitoring.py`) reads `/api/v1/monitoring/{modelId}` by content type (the endpoint answers 406 to JSON-only `Accept`).
+- **SQL-like router** -- `sql_query` (in `tools/sql_query.py`) parses a SQL-flavoured input and routes it to the shared `aggregate()` (explicit aggregate functions), the Widget Query API (when `story_id`+`widget_id` are given) or a Data Export read. A `SELECT` on `FactData` is projected through `FactDataAggregation`, because `FactData` rejects partial key selects.
 - **Plan-only NL→OData / Aggregation translator** — `smart_query(model_id, question)` (in `tools/smart_query.py`) reads the model's `$metadata`, extracts dimension/measure names, and returns a rule-based plan (filter, select, orderby, top) plus a rationale. When aggregation intent is detected (`sum`/`total`/`average`/`count`) the plan targets `read_aggregated_data`; otherwise it targets `read_fact_data`. The tool is **plan-only**: it never executes the query. The caller (or LLM) reviews the plan and explicitly invokes the suggested tool with the suggested arguments. That confirmation step is the safety boundary — the rule-based mapping can misinterpret a question, so we never let it touch tenant data on its own.
 
 ## Open extension points (none implemented yet)

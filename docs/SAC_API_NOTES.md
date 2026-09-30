@@ -1,155 +1,133 @@
 # SAC API field notes
 
-Hard-won knowledge about the SAP Analytics Cloud public API. Read this once before adding a new SAC surface — it will save you hours.
+What SAP Analytics Cloud's public API actually does, as used by this server.
+**Verified** means checked against a live tenant (September 2026);
+**docs** means taken from SAP's API documentation and not yet exercised live.
+Update this file whenever a live check changes an entry.
 
 ## Authentication
 
-### 2-legged OAuth (client_credentials) — what the project supports
+- 2-legged OAuth (`client_credentials`). In SAC: *System > Administration >
+  App Integration* > add an OAuth client with **Client Credentials**. SAC shows
+  the token URL (`*.authentication.<region>.hana.ondemand.com`, `SAC_AUTH_URL`)
+  and the API URL (`*.<region>.hcs.cloud.sap`, `SAC_TENANT_URL`). Both must be in
+  the same region.
+- Each OAuth client is granted access per API. Without it SAC answers
+  **error 3401** "OAuth Client is not allowed to interact with API" (verified
+  for the Data Import API).
+- `x-sap-sac-custom-auth: true` on every request makes SAC stateless (no
+  session cookie), avoiding KBA 3387282 / 3566761. **Do not remove it.**
+- CSRF: every non-GET needs `x-csrf-token`, fetched with `GET /api/v1/csrf` and
+  header `x-csrf-token: fetch`; refetch on 403 with `x-csrf-token: required`.
+- `/api/v1/scim/Me` is not available to client-credentials clients (verified).
+  `whoami` decodes the token's claims instead.
 
-1. In SAC: *System → Administration → App Integration* → "Add a New OAuth Client".
-2. Choose **Authorization Code (Default)** for 3-legged or **Client Credentials** for 2-legged. We use 2-legged.
-3. SAC gives you a **client ID**, **secret**, **token URL** (the `*.authentication.*.hana.ondemand.com` URL — that's `SAC_AUTH_URL`) and an **API URL** (the `*.cloud.sap` URL — that's `SAC_TENANT_URL`).
-4. Roles assigned to the OAuth client determine what tools succeed. A "Data Analyst" role is too narrow for SCIM and audit; a tenant admin works for everything but is overkill for production.
+## Encoding rules
 
-### The `x-sap-sac-custom-auth: true` header
+- **Path segments:** percent-encode every ID (`seg()` in `client/paths.py`).
+  httpx resolves `..`, so an unencoded ID can reach a different endpoint.
+- **Query strings:** spaces must be `%20`. The file repository rejects the
+  form-style `+` with a bare 400 (verified). Keep `$` literal in parameter names.
 
-Set on every request (handled in `client/http.py`'s `_DEFAULT_HEADERS`). It tells SAC to skip session-cookie negotiation. Without it:
+## Data Export Service (OData v4) -- verified
 
-- The first response sets a cookie that subsequent requests must echo.
-- Most third-party HTTP clients drop cookies between requests, leading to 403 / "missing CSRF" errors.
-- See SAP KBA **3387282** (CSRF token issues from `/api/v1/csrf`) and **3566761** (Data Import 403 with non-Postman clients).
-
-**Do not remove this header.**
-
-### CSRF tokens
-
-- Required for **any** non-GET (POST / PUT / PATCH / DELETE).
-- Acquire by sending `GET /api/v1/csrf` with header `x-csrf-token: fetch`. The response *headers* include `x-csrf-token: <value>`. The body is irrelevant.
-- Reuse for the lifetime of the OAuth token; SAC rotates ~every 30 minutes.
-- On 403 with response header `x-csrf-token: required`, refetch and retry. Our client does this automatically.
-
-## Endpoints by surface
-
-### Stories
-- `GET /api/v1/stories` → list. Add `?include=models` to embed referenced models.
-- `GET /api/v1/stories/{id}` → single story.
-
-### File repository / Resources (OData)
-- `GET /api/v1/filerepository/Resources` → list anything in the repo.
-- Filter with OData `$filter` on:
-  - `resourceType` ∈ {FOLDER, STORY, MODEL, APPLICATION, DATASET, BOOKLET, FILE, OTHER}
-  - `resourceSubtype` (e.g. `INSIGHT` for insights)
-  - `parentId` for tree traversal
-- `$metadata` describes the entity for self-discovery.
-
-### Data Export Service (OData v4)
-The big one. Two namespaces:
-
-- **Administration** — model catalogue:
-  - `GET /api/v1/dataexport/administration/Namespaces('sac')/Providers` → list of all models (a.k.a. providers).
-- **Provider** — per-model data:
-  - `/api/v1/dataexport/providers/sac/{model_id}/$metadata` → model schema.
-  - `/api/v1/dataexport/providers/sac/{model_id}/Data` → fact data.
-  - `/api/v1/dataexport/providers/sac/{model_id}/MasterData` → master / dimension members.
-  - `/api/v1/dataexport/providers/sac/{model_id}/AuditData` → audit entries for that model's data.
-  - `/api/v1/dataexport/providers/sac/{model_id}/{Dimension}MasterData` → dimension-specific master.
-
-Standard OData params supported: `$filter`, `$select`, `$top`, `$skip`, `$orderby`, `$expand`, `$count`.
-
-Delta extracts (since Q4 2022): pass `$deltatoken=<token>` from a previous response.
-
-### Data Import Service
-Job-based; **the only place CSRF really matters in practice**.
-
-| Step | Method | Path |
+| Resource | Path | Notes |
 |---|---|---|
-| 1. Create job | POST | `/api/v1/dataimport/models/{model}/factData` (or `/masterData`) |
-| 2. Upload chunk | POST | `/api/v1/dataimport/jobs/{jobId}/data` |
-| 3. Validate | POST | `/api/v1/dataimport/jobs/{jobId}/validate` |
-| 4. Run | POST | `/api/v1/dataimport/jobs/{jobId}/run` |
-| 5. Status | GET  | `/api/v1/dataimport/jobs/{jobId}/status` |
-| 6. Cancel | DELETE | `/api/v1/dataimport/jobs/{jobId}` |
+| Model list | `/api/v1/dataexport/administration/Namespaces('sac')/Providers` | Fields `ProviderID`, `ProviderName`, `Description`, `ServiceURL`. **Ignores `$top`** (returns all). Filter on `ProviderName`; there is no `Name`. |
+| Service document | `/api/v1/dataexport/providers/sac/{model}/` | Lists the model's entity sets. |
+| Schema | `.../{model}/$metadata` | **EDMX XML regardless of `Accept`.** `FactData` key properties = dimensions, other properties = measures. |
+| Fact rows | `.../{model}/FactData` | `$select` must include every key column (**1402**). `Data` does not exist (**3707**). |
+| Aggregates | `.../{model}/FactDataAggregation` | `$select=<dims>,<measures>` returns measures aggregated over the omitted dimensions. `$filter`, `$orderby` (measures too) and `$top` work. **`$apply` is silently ignored and leaf rows come back.** |
+| Dimension members | `.../{model}/<Dimension>Master` | `ID`, `Description`, attributes. `<Dimension>MasterData` does not exist. |
+| Hierarchies | `.../{model}/<Dimension>MasterWithHierarchy` | Only for dimensions with hierarchies. |
+| Enriched facts | `.../{model}/MasterData` | Fact rows plus `<Dimension>___<Attribute>` columns. |
+| Data audit | `.../{model}/AuditData` | **3905** unless data audit is enabled on the model. |
 
-Supporting endpoints:
+Delta (change tracking): read with `Prefer: odata.track-changes`. The response
+ends with `@odata.deltaLink` = `.../FactData?deltaid=<uuid>`; request it with
+`deltaid=<uuid>` to get only changes and a new link. SAC **ignores
+`$deltatoken`** and then returns the whole model.
 
-- `GET /api/v1/dataimport/models/{model}/metadata` → the columns an import payload must provide (dimensions, measures, types). Fetch this before building rows.
-- `GET /api/v1/dataimport/jobs` → recent jobs across all models.
-- `GET /api/v1/dataimport/jobs/{jobId}/invalidRows` → rows rejected by validation, with per-row reasons. Response key varies by release (`invalidRows` / `failedRows` / `value`) — probe all three.
+Responses carry `@des.*` annotations (processing time, cell counts).
 
-Validation responses also vary: failed-row counts appear under `failedNumberRows`, `failedRows` or `invalidRowCount` depending on release.
+## File repository -- verified
 
-Body shapes vary by SAC release; we keep types loose (`dict[str, Any]`).
+`GET /api/v1/filerepository/Resources` supports `$filter`, `$top`, `$skip`,
+`$select`, `$orderby`. Filterable: `resourceType`, `name`, `createdBy`,
+`modifiedBy`, `createdTime`, `modifiedTime`, `folderType`. `resourceType` values:
+`STORY`, `APPLICATION`, `DATAACTION`, `PLANNINGSEQUENCE` (Multi-Actions),
+`MULTIACCOUNT`, `DIMENSION`, `ANALYTIC_MODEL`. `applyManagePrivilege=true`
+includes every user's private content (needs the Manage permission).
 
-### SCIM users / groups
-- `/api/v1/scim/Users` and `/api/v1/scim/Groups` follow the SCIM 2.0 RFCs (7643, 7644).
-- Filter syntax is SCIM, **not** OData: `userName eq "alice@example.com"`, `active eq true`.
-- Patch operations use the `urn:ietf:params:scim:api:messages:2.0:PatchOp` schema.
-- Pagination: `startIndex` (1-based) + `count`.
+`/api/v1/stories` ignores `$top`/`$filter` and returns every story on the
+tenant, so list and search go through the repository.
+`/api/v1/stories/{id}?include=models` works for single stories.
 
-### Content Network
-- Packages: `GET /api/v1/contentnetwork/packages?visibility=private|public`.
-- Imports / exports are async jobs:
-  - `POST /api/v1/contentnetwork/imports` → returns job ID.
-  - `POST /api/v1/contentnetwork/exports` → returns job ID.
-  - `GET /api/v1/contentnetwork/jobs/{id}` → status.
+## Data Import Service -- docs (test client lacked access: 3401)
 
-### Calendar tasks
-- `GET /api/v1/calendar/tasks` with `$filter` on `AssigneeId`, `Status`.
-- `PATCH /api/v1/calendar/tasks/{id}` to update status.
-- Task statuses: Open, InProgress, Completed, Cancelled.
+| Step | Method | Path | Body |
+|---|---|---|---|
+| Create job | POST | `/api/v1/dataimport/models/{model}/{importType}` | `{Mapping?, DefaultValues?, JobSettings: {importMethod, executeWithFailedRows}}` |
+| Upload chunk | POST | `/api/v1/dataimport/jobs/{jobId}` | `{Data: [...], DeletedData?: [...]}` |
+| Validate | POST | `/api/v1/dataimport/jobs/{jobId}/validate` | -- |
+| Run | POST | `/api/v1/dataimport/jobs/{jobId}/run` | optional `{overrideExecuteWithFailedRows}` |
+| Status | GET | `/api/v1/dataimport/jobs/{jobId}/status` | -- |
+| Invalid rows | GET | `/api/v1/dataimport/jobs/{jobId}/invalidRows` | -- |
+| Delete | DELETE | `/api/v1/dataimport/jobs/{jobId}` | -- |
+| List jobs | GET | `/api/v1/dataimport/jobs` | -- (there is no per-model list: **1305**) |
+| Column metadata | GET | `/api/v1/dataimport/models/{model}/metadata` | -- |
 
-### Multi-Action
-- `GET /api/v1/multiaction/multiactions` → defined Multi-Actions.
-- `POST /api/v1/multiaction/multiactions/{id}/runs` → trigger a run.
-- `GET /api/v1/multiaction/runs/{runId}` → status.
+- `importType`: `factData`, `masterData`, `masterFactData`, `privateFactData`.
+- `importMethod`: `Update`, `Append`, `CleanAndReplace`, `DeleteAndUpsert`,
+  `DropAndInsert`.
+- The same job flow serves `/dataimport/currencyConversions/{id}`,
+  `/dataimport/unitConversions/{id}` and
+  `/dataimport/publicDimensions/{id}/publicDimensionData`. Each has
+  `GET .../{id}` and `.../{id}/metadata`.
+- Stored rates cannot be read back through the public API.
+- Practical chunk size: ~50k rows.
 
-### Data Actions
-Planning-model automation (copy / cross-model copy / allocation /
-advanced-formula steps). Not the same thing as Multi-Actions — a Multi-Action
-*orchestrates* data actions plus publish and import steps.
+## Planning
 
-- `GET /api/v1/dataactions` → list; filter with `modelId=<id>`.
-- `GET /api/v1/dataactions/{id}` → detail, including parameter definitions.
-- `POST /api/v1/dataactions/{id}/executions` → trigger; body `{"parameterValues": [{"parameterId": ..., "value": ...}]}`. Returns an `executionId`.
-- `GET /api/v1/dataactions/{id}/executions` → recent runs.
-- `GET /api/v1/dataactions/executions/{executionId}` → status; poll until terminal (`COMPLETED` / `FAILED`).
+- Multi-Actions: no list endpoint (`GET /api/v1/multiActions` is 404). List
+  them from the repository as `PLANNINGSEQUENCE` (verified). Run with
+  `POST /api/v1/multiActions/{id}/executions` `{"parameterValues": [...]}`
+  and poll `GET .../executions/{executionId}` (docs). IDs look like
+  `t.TEST:CEEF...`.
+- Data Actions: `/api/v1/dataactions` does not exist (404, verified). List
+  them from the repository as `DATAACTION` and run them as a Multi-Action step.
 
-Executions are asynchronous and can take minutes on large models. Requires the
-OAuth client to have a role with planning rights on the target model —
-otherwise `403` without a CSRF hint.
+## Other surfaces
 
-### Audit
-- `GET /api/v1/auditing/AuditLog` (OData).
-- Common columns: `Action`, `UserName`, `Timestamp`, `EntityType`, `EntityId`.
+| Surface | Path | Status |
+|---|---|---|
+| Calendar | `GET/PATCH /api/v1/calendar/events/{id}`, `POST /api/v1/calendar/events` | `GET /calendar/events` is **405**: no list API (verified) |
+| Content transport | `POST /api/v1/content/jobs`, `GET /api/v1/content/jobs/{id}` | docs; `/api/v1/contentnetwork/*` is 404 (verified) |
+| Activity log | `GET /api/v1/audit/activities/exportActivities` | exists, **406** on `Accept: application/json` (verified); read by content type. `/api/v1/auditing/AuditLog` is 404 |
+| Monitoring | `GET /api/v1/monitoring/{modelId}` | exists, **406** on JSON-only `Accept` (verified) |
+| Widget query | `GET /api/v1/widgetquery/getWidgetData?storyId=&widgetId=&type=kpiTile` | docs |
+| SCIM | `/api/v1/scim/Users`, `/api/v1/scim/Groups` | Groups verified. SCIM filter syntax (`userName eq "a@b.c"`), paging via `startIndex` + `count` |
 
-## Pagination
+## Error numbers
 
-Two flavours:
-- **OData** — `@odata.nextLink` field at the response root, absolute URL. Don't pass extra params; the URL has them.
-- **Public REST** — `next` or `nextLink` field, sometimes relative.
+SAC puts a stable number in the message ("... [3707]"); the OData `code` is a
+per-request correlation ID. The server reports the number as `SAC-<n>`.
 
-`SACClient.paginate` handles both.
+| Number | Meaning | Fix |
+|---|---|---|
+| 3707 | Entity set does not exist | Check `get_model_metadata` for the model's sets |
+| 1402 | Key column(s) not selected | Select all dimensions, or use `FactDataAggregation` |
+| 3401 | OAuth client not allowed to use this API | Grant API access in App Integration |
+| 3905 | Audit data not enabled | Enable data audit in the model preferences |
+| 1305 | Endpoint not valid | Wrong path, not a wrong ID |
+| HTTP 405 | Operation not supported on this endpoint | e.g. no list API |
+| HTTP 406 | Response format not acceptable | Send a broader `Accept` |
 
-## Rate limits
+## Rate limits and regions
 
-SAC doesn't publish hard numbers, but in practice:
-- Tenant-wide quotas exist on Data Export (a few hundred RPS).
-- Data Import is much stricter — chunks of 50 k rows are the practical sweet spot.
-- 429 responses include `Retry-After` (seconds).
-- Tenacity backoff respects this; our local `TokenBucket(rate=SAC_MAX_RPS)` adds a second guard.
-
-## Common errors
-
-| Symptom | Likely cause |
-|---|---|
-| `401 invalid_client` on token fetch | `SAC_CLIENT_ID` / `SAC_CLIENT_SECRET` mismatch, or wrong `SAC_AUTH_URL` |
-| `401` on data calls but token endpoint works | Scope missing — check that the OAuth client has the API role |
-| `403 csrf required` on POST | `x-csrf-token` not sent, or stale; our client re-fetches |
-| `403 forbidden` on PATCH/POST without CSRF hint | OAuth client lacks the SAC role for that operation |
-| `404` on `/dataexport/providers/sac/{model}/...` | Wrong model ID, or the OAuth client doesn't have access to that model |
-| Empty body on writes | Normal for SAC — many writes return 200 with no body |
-| `set-cookie` header missing on `/api/v1/csrf` | Means `x-sap-sac-custom-auth: true` is **not** being sent — fix that |
-
-## Region / data centre awareness
-
-SAC URLs encode the region: `eu10`, `us10`, `ap10`, etc. Both `SAC_TENANT_URL` and `SAC_AUTH_URL` must match the same region. Mixing regions yields 401s with vague "tenant not found" messages.
+- No published hard limits. Data Export tolerates a few hundred RPS
+  tenant-wide; Data Import is much stricter.
+- 429 responses include `Retry-After`, which the client honours. The local
+  `SAC_MAX_RPS` bucket is a second guard.
+- URLs encode the region (`eu10`, `us10`, `ap12`, ...). Tenant and auth URL
+  must match, or token calls fail with vague "tenant not found" errors.

@@ -157,7 +157,7 @@ async def test_sql_query_analytical_routes_to_aggregation(
 async def test_sql_query_analytical_groupby_only_falls_back_with_note(
     client: SACClient, respx_mock: respx.MockRouter
 ) -> None:
-    # GROUP BY without any aggregate function — no $apply can be built, falls back to OData note.
+    # GROUP BY without any aggregate function: returned unaggregated, with a note.
     respx_mock.get(
         f"{TENANT}/api/v1/dataexport/providers/sac/M1/FactDataAggregation"
     ).mock(return_value=httpx.Response(200, json={"value": [{"id": 1}]}))
