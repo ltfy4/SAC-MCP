@@ -1,219 +1,189 @@
-# SAC-MCP Tool Catalogue
+# Tool reference
 
-Every tool is exposed via FastMCP with a `readOnlyHint` or `destructiveHint`
-annotation so MCP clients can decide whether to confirm the call. All tools
-return either a `page_envelope` shape `{ "rows": [...], "row_count": N, ... }`
-or a single object dict. Errors are surfaced as `{ "error": ..., "code": ..., "status": ... }`.
+Generated from the code by `python docs/gen_tools_md.py` -- do not edit by hand.
+
+74 tools. **read** tools carry `readOnlyHint`; **write** tools carry `destructiveHint`, so MCP clients ask before running them.
 
 ## Admin
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `whoami` | read | Return identity information for the bound OAuth client. |
-| `tenant_info` | read | Tenant URL, region, datacenter metadata. |
-| `health_check` | read | Cheap GET against `/api/v1/csrf` to confirm reachability. |
-
-## Audit
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `query_audit_log` | read | Raw OData passthrough against `/api/v1/auditing/AuditLog`. |
-| `recent_changes_for_user` | read | Audit-log entries for a user since an ISO timestamp. |
-
-## Calendar
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_calendar_tasks` | read | List tasks visible to the OAuth client. |
-| `update_task_status` | destructive | Mutate a task's status. |
-
-## Content Network
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_packages` | read | List available content-network packages. |
-| `create_cn_import_job` | destructive | Start a content-network import. |
-| `create_cn_export_job` | destructive | Start a content-network export. |
-| `get_cn_job_status` | read | Poll a content-network job. |
-
-## Data Export (per-model OData v4)
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `read_fact_data` | read | Fact data via `$filter` / `$select` / `$orderby` / `$top`. |
-| `read_fact_data_delta` | read | Continue a previously initialised delta read. |
-| `export_fact_data_csv` | read | Same as `read_fact_data` but returns CSV. |
-| `read_master_data` | read | Master/dimension members for a model. |
-| `list_dimension_members` | read | Convenience wrapper around `read_master_data`. |
-| `read_audit_data` | read | Per-model audit-log entries. |
-
-## Data Import (write-back lifecycle)
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `create_import_job` | destructive | Create a fact / master data import job. |
-| `upload_job_data` | destructive | Append a chunk of rows or CSV to a job. |
-| `validate_job` | destructive | Validate a job (no write to model). |
-| `run_job` | destructive | Execute a validated job (mutates the model). |
-| `get_job_status` | read | Poll the job state. |
-| `cancel_job` | destructive | Cancel an in-progress job. |
-| `list_recent_jobs` | read | Recent jobs for a model. |
-| `list_all_import_jobs` | read | Recent jobs across every model on the tenant. |
-| `get_import_metadata` | read | Column metadata an import payload must provide. |
-| `get_job_invalid_rows` | read | Rows rejected by validation, with reasons. |
-| `write_fact_data` | destructive | One-shot lifecycle: create → upload (chunked) → validate → run. Stops before `run` if validation rejects rows. |
-
-## FP&A Analysis
-
-Read-only composite tools for financial planning & reporting questions. They
-combine the Data Export master-data and Aggregation endpoints and do the
-joining/variance math client-side.
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_versions` | read | Members of the model's version dimension (`public.Actual`, `public.Plan`, ...). |
-| `compare_versions` | read | Variance report: one measure, two versions, broken down by dimensions; returns `variance` and `variance_pct` per row, largest absolute variance first. |
-| `measure_trend` | read | Last N periods of a measure with period-over-period `change` / `change_pct`. |
-| `check_data_completeness` | read | Which dimension members have no fact data booked (e.g. cost centres missing plan submissions). |
-
-## Data Actions
-
-Planning-model automation (copy, cross-model copy, allocation,
-advanced-formula steps). Distinct from Multi-Actions, which orchestrate
-several data actions plus publish/import steps. Executions are asynchronous —
-poll with `get_data_action_status`.
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_data_actions` | read | List Data Actions (optionally filtered by model). |
-| `get_data_action` | read | Detail for one Data Action, including parameter definitions. |
-| `run_data_action` | destructive | Trigger an execution; returns an `executionId`. |
-| `list_data_action_executions` | read | Recent executions of one Data Action. |
-| `get_data_action_status` | read | Poll one execution until terminal. |
-
-## Models
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_models` | read | List models visible to the OAuth client. |
-| `get_model_metadata` | read | Full metadata document for a model. |
-| `list_dimensions` | read | Enumerate dimensions of a model. |
-| `list_measures` | read | Enumerate measures of a model. |
-
-## Multi-Action
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_multi_actions` | read | List defined multi-actions. |
-| `run_multi_action` | destructive | Trigger a multi-action run. |
-
-## Resources (file repository)
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_resources` | read | Enumerate `/filerepository/Resources`. |
-| `get_resource` | read | Fetch a single resource by ID. |
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `whoami` | read | - | Identify the OAuth client this server calls SAC with. |
+| `tenant_info` | read | - | Return the tenant URL, MCP server version, and configured behaviour. |
+| `health_check` | read | - | Confirm the tenant is reachable and the OAuth credentials work. |
 
 ## Stories
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_stories` | read | Stories visible to the OAuth client. |
-| `get_story` | read | Single story by ID, including referenced models. |
-| `search_stories` | read | Substring match across name/description. |
-| `list_story_models` | read | Models referenced by a story. |
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_stories` | read | `max_rows?`, `created_by?`, `all_tenant_content?` | List stories (from the file repository; ``/api/v1/stories`` ignores paging). |
+| `get_story` | read | `story_id` | Return a single story by ID, including referenced models. |
+| `search_stories` | read | `query`, `max_rows?` | Find stories whose name or description contains ``query`` (case-insensitive). |
+| `list_story_models` | read | `story_id` | Return the list of models referenced by a story. |
 
-## Teams (SCIM Groups)
+## Resources (file repository)
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_teams` | read | List SCIM groups. |
-| `add_member` | destructive | Add a user to a team. |
-| `remove_member` | destructive | Remove a user from a team. |
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_resources` | read | `resource_type?`, `name_contains?`, `created_by?`, `filter?`, `all_tenant_content?`, `max_rows?` | List content in the SAC file repository (stories, apps, data actions, ...). |
+| `get_resource` | read | `resource_id` | Fetch one repository resource by its ``resourceId``. |
+| `find_by_type` | read | `resource_type`, `max_rows?` | Convenience: list every resource of one type (see ``list_resources``). |
 
-## Users (SCIM Users)
+## Models
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_users` | read | List SCIM users. |
-| `create_user` | destructive | Create a new SCIM user. |
-| `deactivate_user` | destructive | Deactivate a SCIM user. |
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_models` | read | `name_contains?`, `max_rows?` | List the models (Data Export "providers") visible to the OAuth client. |
+| `get_model_metadata` | read | `model_id`, `include_raw_xml?` | Describe a model: dimensions, measures, entity sets, account dimension. |
+| `list_dimensions` | read | `model_id` | List a model's dimensions, whether each has a member list and a hierarchy. |
+| `list_measures` | read | `model_id` | List a model's measures (e.g. ``LC_AMOUNT``). |
 
-## Public Dimensions
+## Data Export
 
-Tenant-wide shared dimensions (cost centres, products, organisational
-hierarchies). Live under `/api/v1/dataexport/providers/sac_public_dimensions`.
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `read_fact_data` | read | `model_id`, `filter?`, `select?`, `orderby?`, `top?`, `skip?` | Read leaf-level fact rows from a model (OData ``FactData``). |
+| `read_fact_data_delta` | read | `model_id`, `delta_token`, `top?` | Deprecated alias of ``get_delta_changes`` for ``FactData``. |
+| `export_fact_data_csv` | read | `model_id`, `filter?`, `select?`, `orderby?`, `max_rows?` | Read fact rows and return them as one CSV string. |
+| `read_master_data` | read | `model_id`, `dimension?`, `filter?`, `top?` | Read master data for a model. |
+| `list_dimension_members` | read | `model_id`, `dimension`, `top?`, `with_hierarchy?` | List the members of one dimension (``ID``, ``Description``, attributes). |
+| `read_audit_data` | read | `model_id`, `filter?`, `top?` | Read the data-change audit trail of a model (``AuditData``). |
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_public_dimensions` | read | List all public dimensions on the tenant. |
-| `read_public_dimension_master_data` | read | Members of one public dimension (`$filter`/`$select`/`$orderby`/`$top`/`$skip`). |
-| `read_public_dimension_hierarchies` | read | Members plus hierarchy node references. |
+## Delta tracking
 
-## Currency & Unit Conversion
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `init_delta_tracking` | read | `model_id`, `entity?`, `top?`, `filter?` | Start change tracking on a model entity set and get a ``delta_token``. |
+| `get_delta_changes` | read | `model_id`, `delta_token`, `entity?`, `top?` | Return only the rows changed since ``delta_token`` was issued. |
 
-Tenant-level currency and unit-of-measure conversion tables, plus per-model
-currency data.
+## Aggregation
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `list_currency_tables` | read | List currency conversion tables. |
-| `get_currency_table` | read | Get one currency table's metadata. |
-| `get_currency_rates` | read | List exchange rates in a table. |
-| `upload_currency_rates` | destructive | Upload exchange rates (sourceCurrency / targetCurrency / rateType / validFrom / rate). |
-| `list_unit_tables` | read | List unit-of-measure conversion tables. |
-| `get_unit_table` | read | Get one unit table's metadata. |
-| `get_unit_rates` | read | List unit conversion factors. |
-| `upload_unit_rates` | destructive | Upload unit conversion factors. |
-| `read_currency_data` | read | Read the per-model `CurrencyData` OData entity. |
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `read_aggregated_data` | read | `model_id`, `group_by`, `aggregates`, `filter?`, `orderby?`, `top?`, `max_scan_rows?` | Group a model's facts by dimensions and aggregate measures. |
+| `top_n_by_measure` | read | `model_id`, `dimension`, `measure`, `agg?`, `direction?`, `top?`, `filter?` | Rank a dimension's members by an aggregated measure (top or bottom N). |
+| `aggregate_by_dimension` | read | `model_id`, `dimension`, `measures`, `agg?`, `filter?`, `top?` | Aggregate several measures grouped by one dimension (summary table). |
 
-## Difference / Delta Tracking
+## FP&A analysis
 
-Use SAC's OData v4 delta extension (`Prefer: odata.track-changes` plus
-`$deltatoken`) to fetch only the rows that changed since a baseline call.
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_versions` | read | `model_id`, `version_dimension?`, `top?` | List the planning versions (categories) of a model. |
+| `compare_versions` | read | `model_id`, `measure`, `group_by`, `version_a`, `version_b`, `version_dimension?`, `agg?`, `filter?`, `top?` | Compare one measure between two versions — the variance report. |
+| `measure_trend` | read | `model_id`, `measure`, `time_dimension?`, `periods?`, `agg?`, `filter?` | Aggregate a measure over time and compute period-over-period change. |
+| `check_data_completeness` | read | `model_id`, `dimension`, `measure`, `filter?`, `max_members?` | Report which dimension members have no fact data booked. |
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `init_delta_tracking` | read | Establish a baseline read; returns rows + a `delta_token`. |
-| `get_delta_changes` | read | Fetch only the rows changed since the previous `delta_token`. |
+## Query routing: sql_query
 
-## Widget Query
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `sql_query` | read | `model_id`, `query`, `top?`, `entity?`, `story_id?`, `widget_id?` | Execute a query against a SAC model, automatically choosing the best API. |
 
-Programmatic access to widget data inside SAC stories. Currently only
-`kpiTile` widget types are returned by the public Widget Query API.
+## Query routing: smart_query
 
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `get_widget_data` | read | Fetch the rendered values from a story widget (kpiTile only). |
-| `list_story_widgets` | read | Best-effort list of widget descriptors embedded in a story. |
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `smart_query` | read | `model_id`, `question`, `top?` | Translate a natural-language question into an OData query plan. |
 
-## Aggregation (server-side)
+## Data Import
 
-Server-side GROUP BY + measure aggregation via the OData v4 `$apply` operator.
-Requests hit `/api/v1/dataexport/providers/sac/{model_id}/Aggregation` and
-return already-aggregated rows — no client-side aggregation needed.
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `create_import_job` | write | `model_id`, `kind?`, `import_method?`, `mapping?`, `default_values?` | Create a Data Import job. |
+| `upload_job_data` | write | `job_id`, `rows?`, `csv_text?` | Upload one chunk of data into an import job. |
+| `validate_job` | write | `job_id` | Validate an import job (does not write to the model). |
+| `run_job` | write | `job_id` | Execute a previously-validated import job. **Mutates the model.** |
+| `get_job_status` | read | `job_id` | Return the current status of an import job. |
+| `cancel_job` | write | `job_id` | Cancel an in-progress import job. |
+| `list_recent_jobs` | read | `model_id`, `top?` | List recent import jobs that target one model. |
+| `list_all_import_jobs` | read | `top?` | List recent import jobs across every model on the tenant. |
+| `get_import_metadata` | read | `model_id` | Return the import column metadata for a model. |
+| `get_job_invalid_rows` | read | `job_id`, `top?` | Return rows that failed validation for an import job. |
+| `write_fact_data` | write | `model_id`, `rows?`, `csv_text?`, `import_method?`, `mapping?`, `default_values?`, `chunk_size?` | Write fact data to a model in one call. **Mutates the model.** |
 
-| Tool | Hint | Parameters | Purpose |
-|------|------|-----------|---------|
-| `read_aggregated_data` | read | `model_id`, `group_by`, `aggregates`, `filter?`, `orderby?`, `top=200` | Generic GROUP BY + aggregate. `aggregates` is a list of `{column, op, alias}` dicts; `op` is one of `sum`, `average`, `min`, `max`, `countdistinct`, `count`. |
-| `top_n_by_measure` | read | `model_id`, `dimension`, `measure`, `agg="sum"`, `direction="desc"`, `top=10`, `filter?` | Convenience: top or bottom N members of a dimension ranked by one aggregated measure. |
-| `aggregate_by_dimension` | read | `model_id`, `dimension`, `measures`, `agg="sum"`, `filter?`, `top=200` | One dimension, multiple measures — returns a summary table. |
+## Multi-Actions
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_multi_actions` | read | `name_contains?`, `max_rows?` | List Multi-Actions (file-repository resources of type ``PLANNINGSEQUENCE``). |
+| `run_multi_action` | write | `multi_action_id`, `parameter_values?` | Trigger a Multi-Action run. **This writes to planning models.** |
+| `get_multi_action_run_status` | read | `multi_action_id`, `execution_id` | Return the status of one Multi-Action execution. |
+
+## Data Actions
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_data_actions` | read | `name_contains?`, `max_rows?` | List Data Actions (file-repository resources of type ``DATAACTION``). |
+| `get_data_action` | read | `data_action_id` | Return the repository entry (name, owner, timestamps) of one Data Action. |
+
+## Currency & unit tables
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_currency_tables` | read | `top?` | List currency conversion (exchange-rate) tables. |
+| `get_currency_table` | read | `table_id` | Describe one currency table and the columns its rate import expects. |
+| `upload_currency_rates` | write | `table_id`, `rates`, `import_method?` | Write exchange rates into a currency table. **Mutates the tenant.** |
+| `list_unit_tables` | read | `top?` | List unit-of-measure conversion tables. |
+| `get_unit_table` | read | `table_id` | Describe one unit conversion table and the columns its import expects. |
+| `upload_unit_rates` | write | `table_id`, `rates`, `import_method?` | Write conversion factors into a unit table. **Mutates the tenant.** |
+
+## Public dimensions
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_public_dimensions` | read | `top?` | List the public (shared) dimensions on the tenant. |
+| `get_public_dimension` | read | `dimension_id` | Describe one public dimension and the columns its member import expects. |
+
+## Users (SCIM)
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_users` | read | `filter?`, `start_index?`, `count?` | List SCIM users. Supports raw SCIM ``filter`` syntax. |
+| `get_user` | read | `user_id` | Return one SCIM user by internal ID. |
+| `create_user` | write | `user_name`, `display_name?`, `email?`, `active?`, `extra?` | Create a new SCIM user. |
+| `update_user` | write | `user_id`, `patch` | PATCH a SCIM user. ``patch`` is a SCIM PatchOp body (``Operations`` list). |
+| `deactivate_user` | write | `user_id` | Mark a user inactive (preferred over delete to preserve audit trail). |
+
+## Teams (SCIM)
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `list_teams` | read | `filter?`, `start_index?`, `count?`, `include_members?` | List SCIM groups (teams). |
+| `get_team` | read | `team_id` | Return one team / group by ID. |
+| `add_member` | write | `team_id`, `user_id` | Add a user to a team. |
+| `remove_member` | write | `team_id`, `user_id` | Remove a user from a team. |
+
+## Calendar
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `get_calendar_task` | read | `task_id` | Return one calendar event (task or process) by its event ID. |
+| `update_task_status` | write | `task_id`, `status` | Set the status of a calendar event. **Mutates the tenant.** |
+
+## Content transport
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `create_cn_import_job` | write | `job_definition` | Start a content **import** job. **Mutates the tenant.** |
+| `create_cn_export_job` | write | `job_definition` | Start a content **export** job (publish content to a package). |
+| `get_cn_job_status` | read | `job_id` | Return the status of a content import/export job. |
+
+## Audit log
+
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `query_audit_log` | read | `filter?`, `top?`, `orderby?` | Export activity-log entries (who did what, when). |
+| `recent_changes_for_user` | read | `username`, `since_iso`, `top?` | Activity-log entries for one user since an ISO timestamp. |
 
 ## Monitoring
 
-Answers "is my data fresh", "when did this model last load", "how big is this model".
-Endpoint family: `/api/v1/monitoring/models/...`.
-Key fields: `size`, `rowCount`, `lastImportTime`, `lastModifiedBy`, `lastModifiedTime`.
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `get_model_monitoring` | read | `model_id` | Return monitoring information (size, row count, last changes) for one model. |
 
-| Tool | Hint | Parameters | Purpose |
-|------|------|-----------|---------|
-| `list_monitored_models` | read | `top=200`, `filter?` | All models with monitoring metadata; optional OData `$filter`. |
-| `get_model_monitoring` | read | `model_id` | Monitoring detail for one model (size, row count, timestamps). |
-| `get_model_job_history` | read | `model_id`, `top=50`, `since_iso?` | Recent import/refresh jobs for a model; optionally filtered by start time. |
+## Widget query
 
-## Smart Query
-
-| Tool | Hint | Purpose |
-|------|------|---------|
-| `smart_query` | read | Translates a natural-language question into a query plan. When aggregation intent is detected (`sum`/`total`/`average`/`count`) returns a `read_aggregated_data` plan with `next_tool="read_aggregated_data"`; otherwise returns a `read_fact_data` plan. Never executes the query. |
-| `sql_query` | read | Accepts a SQL-like query string; routes automatically. Queries with explicit aggregate functions (`SUM(col)`, `COUNT(col)`, etc.) go to the Aggregation entity for server-side GROUP BY. With `story_id`+`widget_id` the Widget Query API is preferred. Everything else uses OData. |
+| Tool | Kind | Parameters (`?` = optional) | Description |
+|---|---|---|---|
+| `get_widget_data` | read | `story_id`, `widget_id`, `type?` | Fetch data from a specific widget in a SAC story. |
+| `list_story_widgets` | read | `story_id` | List widget metadata embedded in a SAC story (best effort). |

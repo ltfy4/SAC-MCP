@@ -33,6 +33,8 @@ sac_mcp/
 │   ├── csrf.py            # CsrfTokenCache; refreshed on 403
 │   ├── http.py            # SACClient: request, get_json, post_json, paginate
 │   ├── odata.py           # ODataQuery + and_/or_/eq/contains/... builders
+│   ├── paths.py           # seg()/des_path(): encoded paths, OData query encoding
+│   ├── metadata.py        # $metadata (EDMX) parsing, describe_model()
 │   ├── errors.py          # SACError + from_response() (normalises envelopes)
 │   ├── ratelimit.py       # async TokenBucket
 │   └── models.py          # permissive Pydantic DTOs (SACEntity etc.)
@@ -43,12 +45,12 @@ sac_mcp/
 │   ├── resources.py       # /filerepository/Resources
 │   ├── models.py          # data-export Administration namespace
 │   ├── dataexport.py      # fact / master / audit OData reads (+ delta + CSV)
-│   ├── aggregation.py     # server-side GROUP BY via OData $apply
+│   ├── aggregation.py     # sum via FactDataAggregation, other ops client-side
 │   ├── dataimport.py      # job lifecycle (create / upload / validate / run / status / cancel) + one-shot write_fact_data
 │   ├── dataactions.py     # planning data actions (list / inspect / trigger / poll)
 │   ├── fpa.py             # FP&A analysis: versions, variance, trend, completeness
-│   ├── difference.py      # snapshot delta between two date ranges
-│   ├── currency.py        # tenant currency conversion + exchange-rate reads
+│   ├── difference.py      # OData change tracking (deltaid tokens)
+│   ├── currency.py        # currency/unit tables via the Data Import API
 │   ├── public_dimensions.py # public dimension members
 │   ├── widget_query.py    # story widget data reads
 │   ├── sql_query.py       # SQL-like router (OData / Aggregation / Widget Query)
@@ -147,8 +149,11 @@ mypy sac_mcp
 # MCP Inspector (interactive)
 npx @modelcontextprotocol/inspector sac-mcp
 
-# Live integration (requires real tenant creds in .env)
-SAC_LIVE_TEST=1 pytest tests/integration -q -m live
+# Regenerate the tool reference after adding/changing tools
+python docs/gen_tools_md.py
+
+# There is no live test suite yet: check new endpoints against a sandbox
+# tenant with the MCP Inspector and record the result in docs/SAC_API_NOTES.md
 ```
 
 ## Recipe: "Add a new tool to an existing surface"
@@ -188,7 +193,7 @@ SAC_LIVE_TEST=1 pytest tests/integration -q -m live
 - **Don't** `print(...)` for stdio transport — stdout is the protocol channel. Logs go to stderr (handled by `logging.py`).
 - **Don't** create files outside `sac_mcp/` and `tests/` without a reason. README, pyproject, Dockerfile, `.github/` are the only top-level files.
 - **Don't** instantiate `SACClient` in tests — use the `client` fixture from `conftest.py`.
-- **Don't** call live SAC from unit tests. Live tests live under `tests/integration/` and are gated by the `live` pytest marker + `SAC_LIVE_TEST=1`.
+- **Don't** call live SAC from unit tests. Verify new endpoints against a sandbox tenant and record the outcome in `docs/SAC_API_NOTES.md`.
 - **Don't** hardcode tenant URLs. Always read from `Settings`.
 - **Don't** add 3-legged OAuth or refresh-token logic to `auth.py` without first opening an issue — the project commits to 2-legged client_credentials only for v1.
 - **Don't** push to `main`/`master` directly. Feature work goes on `feat/...` branches with a pull request.

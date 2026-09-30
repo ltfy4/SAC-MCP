@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-MCP-purple.svg)](https://modelcontextprotocol.io)
 
-SAC-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the SAP Analytics Cloud public API — stories, model data, write-back, planning data actions, users, audit, monitoring and more — as **85+ typed tools**. OAuth, CSRF, retries, pagination and rate limiting are handled for you.
+SAC-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the SAP Analytics Cloud public API — stories, model data, write-back, planning data actions, users, audit, monitoring and more — as **74 typed tools**. OAuth, CSRF, retries, pagination and rate limiting are handled for you.
 
 Once connected, a conversation looks like this:
 
@@ -133,57 +133,65 @@ The client needs at least the **Analytics** and **Data Export** scopes for read-
 
 | Area | Example requests |
 |---|---|
-| **Stories & resources** | "List all stories in the Finance folder", "Which models does story X use?" |
-| **Model data (read)** | "Show me EMEA revenue for Q1 where margin < 10%" |
-| **Aggregation (server-side)** | "Top 5 regions by total sales", "Sum amount grouped by year and country" |
-| **Model data (write)** | "Import this CSV of actuals into the HR planning model" |
-| **Data actions** | "Run the 'Copy Actuals to Plan' data action for version 2026.Q1" |
-| **FP&A analysis** | "Show budget vs actual variance by cost centre", "Which cost centres haven't submitted their 2026 plan?" |
-| **Public dimensions** | "List all cost-centre members", "Show the product hierarchy" |
+| **Stories & resources** | "List the stories alice created", "Which models does story X use?" |
+| **Model discovery** | "What dimensions and measures does model X have?", "List the members of the Account dimension" |
+| **Model data (read)** | "Show actuals for entity DE01 in January 2026" |
+| **Aggregation** | "Top 5 entities by LC_AMOUNT for actuals", "Total amount by product" |
+| **FP&A analysis** | "Actual vs plan by entity for the revenue account", "Which entities have no plan data?" |
 | **Delta / change tracking** | "What rows changed since my last sync?" |
-| **Currency & units** | "Upload updated EUR→USD rates effective 2024-01-01" |
+| **Model data (write)** | "Import this CSV of actuals into the planning model" |
+| **Multi-Actions** | "Run the month-end Multi-Action for the Plan version" |
 | **Users & teams (SCIM)** | "Create a user for alice@example.com and add her to the Analysts team" |
-| **Content Network** | "Export the Finance package and import it to the QA tenant" |
-| **Calendar tasks** | "What tasks are pending this week? Mark task 42 as complete" |
-| **Multi-actions** | "Trigger the month-end close multi-action" |
-| **Audit log** | "What did bob@example.com change in the last 24 hours?" |
-| **Monitoring** | "Which models haven't loaded in the last week?", "Show job history for model X" |
+| **Currency & units** | "Upload the updated EUR to USD rates" |
+| **Audit & monitoring** | "What did bob change since Monday?", "How large is model X?" |
 | **Widget data** | "Read the KPI tile values from story XYZ" |
-| **Smart / SQL routing** | "Translate 'top 5 products by sales in EMEA' into an OData call" |
+| **SQL-style routing** | "SUM(LC_AMOUNT) GROUP BY Entity WHERE Version eq 'public.Actual'" |
+
+On account-based models, filter to one account before summing a measure: the
+line items are members of the Account dimension, and a total across accounts
+mixes unrelated figures. `get_model_metadata` flags these models.
 
 ## Tool catalogue
 
 All tools return one of:
 
-- `{ "rows": [...], "row_count": N, "next_cursor": "..." }` for collection results
+- `{ "rows": [...], "row_count": N, "has_more": bool }` for collection results
 - A single object dict for `get_*` / metadata calls
-- `{ "error": "...", "code": "...", "status": 4xx }` on SAC errors
+- `{ "error": "...", "code": "SAC-3707", "status": 4xx }` on SAC errors -- the
+  message ends with a hint on how to fix the call
 
-| Surface | Tools | Type mix | Summary |
-|---|---:|---|---|
-| **Admin** | 3 | read | Identity, tenant metadata, health check |
-| **Stories** | 4 | read | List, search, fetch story → models |
-| **Resources (file repo)** | 2 | read | `/filerepository/Resources` enumeration |
-| **Models** | 4 | read | List models, metadata, dimensions, measures |
-| **Data Export** | 6 | read | Fact / master / audit OData reads (+ delta + CSV) |
-| **Aggregation** | 3 | read | Server-side GROUP BY via OData `$apply` |
-| **Data Import** | 11 | read + write | Job lifecycle (create → upload → validate → run → status → cancel), one-shot `write_fact_data`, invalid-row inspection, import metadata |
-| **Data Actions** | 5 | read + write | List, inspect, trigger and poll planning data actions |
-| **FP&A Analysis** | 4 | read | Version listing, actual-vs-plan variance, trends, plan-submission completeness |
-| **Public Dimensions** | 3 | read | Tenant-wide shared dimensions (cost centres, products, hierarchies) |
-| **Currency & Units** | 9 | read + write | Conversion tables, rates, per-model currency data |
-| **Delta tracking** | 2 | read | OData v4 delta token reads |
-| **Widget Query** | 2 | read | Story widget data (`kpiTile`) |
-| **Users (SCIM)** | 3 | read + write | List / create / deactivate |
-| **Teams (SCIM Groups)** | 3 | read + write | List / add member / remove member |
-| **Content Network** | 4 | read + write | Packages, import / export jobs |
-| **Calendar Tasks** | 2 | read + write | List tasks, update status |
-| **Multi-Action** | 3 | read + write | List, trigger, poll run status |
-| **Audit Log** | 2 | read | Tenant audit queries (OData passthrough + user-scoped helper) |
-| **Monitoring** | 3 | read | Model freshness, row counts, job history |
-| **Query routing** | 2 | read | `sql_query` (SQL-like router) and `smart_query` (plan-only NL→OData translator) |
+Results larger than `SAC_RESPONSE_CHAR_LIMIT` are trimmed and marked
+`"truncated": true` rather than flooding the client's context.
 
-**[Full per-tool reference → `docs/tools.md`](docs/tools.md)**
+"Verified" marks surfaces exercised against a live tenant; the others follow
+SAP's API documentation and still need a live check (the Data Import family
+needs an OAuth client with Data Import access).
+
+| Surface | Tools | Type mix | Summary | Verified |
+|---|---:|---|---|---|
+| **Admin** | 3 | read | OAuth client identity (token claims), tenant info, health check | yes |
+| **Stories** | 4 | read | List/search via the file repository, story details and models | yes |
+| **Resources (file repo)** | 3 | read | Filter repository content by type, creator, name | yes |
+| **Models** | 4 | read | List models; dimensions, measures and entity sets from `$metadata` | yes |
+| **Data Export** | 6 | read | `FactData`, `<Dim>Master`, `MasterData`, `AuditData` reads (+ CSV) | yes |
+| **Delta tracking** | 2 | read | Change tracking with SAC's `deltaid` tokens | yes |
+| **Aggregation** | 3 | read | `sum` server-side via `FactDataAggregation`; other operators client-side | yes |
+| **FP&A analysis** | 4 | read | Versions, version variance, trends, plan completeness | via aggregation |
+| **Query routing** | 2 | read | `sql_query` (SQL-like router) and `smart_query` (plan-only NL -> OData) | yes |
+| **Data Import** | 11 | read + write | Job lifecycle, one-shot `write_fact_data`, invalid rows, metadata | docs |
+| **Multi-Actions** | 3 | read + write | List (repository), run, execution status | list only |
+| **Data Actions** | 2 | read | List and inspect; run them as Multi-Action steps | yes |
+| **Currency & units** | 6 | read + write | Conversion tables and rate imports (Data Import API) | docs |
+| **Public dimensions** | 2 | read | List and describe shared dimensions (Data Import API) | docs |
+| **Users (SCIM)** | 5 | read + write | List, get, create, update, deactivate | docs |
+| **Teams (SCIM)** | 4 | read + write | List (members summarised), get, add/remove member | yes |
+| **Calendar** | 2 | read + write | Read an event, update its status (SAC has no list API) | docs |
+| **Content transport** | 3 | read + write | Import/export jobs and job status | docs |
+| **Audit log** | 2 | read | Activity export (JSON/CSV), per-user changes | docs |
+| **Monitoring** | 1 | read | Per-model monitoring information | docs |
+| **Widget query** | 2 | read | Story widget data (`kpiTile`) | docs |
+
+**[Full per-tool reference -> `docs/tools.md`](docs/tools.md)** (generated by `python docs/gen_tools_md.py`)
 
 Every write tool is marked `destructiveHint=True` in its annotation so MCP clients prompt for confirmation by default.
 
@@ -210,13 +218,14 @@ All settings are environment variables. The setup wizard writes them for you; to
 | `SAC_OAUTH_SCOPE` | _(empty)_ | OAuth scope; leave blank for the default tenant scope |
 | `SAC_REQUEST_TIMEOUT` | `60` | HTTP request timeout in seconds |
 | `SAC_MAX_RETRIES` | `4` | Retry attempts for transient errors (exponential backoff) |
-| `SAC_PAGE_SIZE` | `1000` | Rows per OData page |
+| `SAC_RESPONSE_CHAR_LIMIT` | `100000` | Max characters per tool result; larger results are truncated (`0` = off) |
 | `SAC_MAX_RPS` | `10` | Local rate limit (requests/second); `0` = unlimited |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `MCP_HTTP_HOST` | `127.0.0.1` | Bind address for HTTP transport |
 | `MCP_HTTP_PORT` | `8765` | Port for HTTP transport |
 | `MCP_HTTP_BEARER` | _(required for HTTP)_ | Shared bearer token — generate with `openssl rand -hex 32` |
 | `MCP_HTTP_CORS_ORIGINS` | _(empty)_ | Comma-separated allowed CORS origins |
+| `MCP_HTTP_ALLOWED_HOSTS` | _(empty)_ | DNS-rebinding allowlist of `Host` header values (e.g. `sac-mcp:8765`); empty disables the check |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `json` | `json` or `console` |
 
@@ -283,9 +292,30 @@ The CSRF cache is stale and refresh isn't being attempted. `SACClient` already i
 </details>
 
 <details>
-<summary><b><code>Connection error</code> only on writes</b></summary>
+<summary><b><code>transport_error</code> on every call</b></summary>
 
-Outbound network is blocking SAC's OAuth or CSRF endpoints. Verify the host can reach both `SAC_TENANT_URL` and `SAC_AUTH_URL` — they are often on different sub-domains.
+The host cannot reach SAC. Verify it can reach both `SAC_TENANT_URL` and `SAC_AUTH_URL` -- they are on different domains (`*.hcs.cloud.sap` and `*.authentication.*.hana.ondemand.com`).
+
+</details>
+
+<details>
+<summary><b><code>SAC-3401</code> "OAuth Client is not allowed to interact with API"</b></summary>
+
+The OAuth client has no access to that API -- typically the Data Import API, which write-back, currency tables and public dimensions use. In SAC go to *System > Administration > App Integration*, edit the client and grant it access to the Data Import service.
+
+</details>
+
+<details>
+<summary><b><code>SAC-3707</code> "Entity Set Name does not exist"</b></summary>
+
+The model has no such entity set (for example a dimension name typo in `<Dimension>Master`). `get_model_metadata(model_id)` lists the model's entity sets and dimensions.
+
+</details>
+
+<details>
+<summary><b><code>SAC-1402</code> "Key column(s) not selected"</b></summary>
+
+`FactData` only accepts a `select` that includes every dimension. To keep some dimensions and total the rest, use `read_aggregated_data` (or `sql_query`, which does this automatically).
 
 </details>
 
@@ -333,7 +363,7 @@ Still stuck? Open an issue with: SAC region (`eu10` / `us10` / …), transport (
 ┌──────────────────────▼───────────────────────────────────────┐
 │                    FastMCP server                            │
 │  ─────────────────────────────────────────────────────────   │
-│   85+ Tools            Resources (sac://…)     Prompts       │
+│   74 Tools             Resources (sac://…)     Prompts       │
 │  ─────────────────────────────────────────────────────────   │
 │                    SACClient (single shared)                 │
 │   OAuth 2-legged · CSRF cache · retry/backoff                │
@@ -354,6 +384,7 @@ Key design decisions:
 
 - **One shared HTTP client** — reuses connections (HTTP/2), one OAuth token cache, one CSRF cache, one rate-limit bucket. No race conditions.
 - **`x-sap-sac-custom-auth: true`** on every request — tells SAC to skip session-cookie negotiation, avoiding the well-known KBA 3387282 / 3566761 failure mode.
+- **IDs are percent-encoded into URL paths** -- an LLM-supplied ID can never add path segments (`../`) or hit another endpoint.
 - **`@safe` decorator on every tool** — converts `SACError` into a structured `{"error": ...}` dict so the LLM can react instead of crashing.
 - **`readOnlyHint` / `destructiveHint` on every tool** — clients gate confirmation prompts before any mutation.
 - **Plan-only NL→OData translation** — the natural-language `smart_query` tool returns a query *plan*, never executes it; the caller reviews and runs the suggested call explicitly. That confirmation step is the safety boundary.
@@ -414,7 +445,7 @@ sac_mcp/
 │   ├── resources.py
 │   ├── models.py
 │   ├── dataexport.py
-│   ├── aggregation.py    # server-side GROUP BY via OData $apply
+│   ├── aggregation.py    # sum via FactDataAggregation, other ops client-side
 │   ├── dataimport.py
 │   ├── dataactions.py    # planning data actions (list / inspect / trigger / poll)
 │   ├── fpa.py            # FP&A analysis: versions, variance, trend, completeness
@@ -456,7 +487,8 @@ tests/
 | [docs/tools.md](docs/tools.md) | Full per-tool reference (parameters, purpose, hints) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Detailed design rationale: auth flow, retry strategy, pagination model |
 | [docs/CONVENTIONS.md](docs/CONVENTIONS.md) | Coding conventions for contributors with reasoning |
-| [docs/SAC_API_NOTES.md](docs/SAC_API_NOTES.md) | SAC-specific API quirks and known issues |
+| [docs/SAC_API_NOTES.md](docs/SAC_API_NOTES.md) | SAC endpoints, verified behaviour and error numbers |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes, including removed and changed tools |
 | [MAINTAINERS.md](MAINTAINERS.md) | Internal maintainer guide — recipes, security checklist, "definition of done" |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to set up, what to run before a PR, commit and PR conventions |
 | [SECURITY.md](SECURITY.md) | Vulnerability disclosure channel and production hardening checklist |
