@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-_REGION_RE = re.compile(r"\.(eu10|us10|ap10|ap11|jp10|br10|ca10|eu11|us20|us21)\.")
+# Any SAP BTP region code: eu10, eu20, us10, ap12, jp20, in30, ...
+_REGION_RE = re.compile(r"\.([a-z]{2}\d{2})\.")
 
 
 def _extract_region(url: str) -> str | None:
@@ -58,10 +59,25 @@ def _resolve_sac_mcp_command() -> tuple[list[str], str | None]:
     )
 
 
+def _env_value(value: str) -> str:
+    """Quote a .env value when dotenv would otherwise mangle it (#, spaces, quotes)."""
+
+    if value and not re.search(r"[\s#'\"\\]", value):
+        return value
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def _derive_auth_url(tenant_url: str) -> str:
+    """https://<name>.<region>.hcs.cloud.sap -> https://<name>.authentication.<region>.hana.ondemand.com"""
+
+    m = re.match(r"https://([^./]+)\.([a-z]{2}\d{2})\.hcs\.cloud\.sap/?$", tenant_url.strip())
+    return f"https://{m.group(1)}.authentication.{m.group(2)}.hana.ondemand.com" if m else ""
+
+
 def _build_env_content(values: dict[str, str]) -> str:
     lines: list[str] = []
     for key, val in values.items():
-        lines.append(f"{key}={val}")
+        lines.append(f"{key}={_env_value(val)}")
     return "\n".join(lines) + "\n"
 
 
@@ -92,6 +108,7 @@ def main(*, _input: TextIO | None = None) -> None:
 
     auth_url = _prompt(
         "OAuth auth URL (e.g. https://company.authentication.eu10.hana.ondemand.com)",
+        default=_derive_auth_url(tenant_url),
         stream=stream,
     )
     _validate_https(auth_url, "SAC_AUTH_URL")

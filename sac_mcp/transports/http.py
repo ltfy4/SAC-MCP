@@ -55,11 +55,15 @@ def run_http(server: FastMCP, settings: Settings) -> None:
 
     expected = settings.mcp_http_bearer.get_secret_value()
 
+    # Starlette runs the first middleware outermost. CORS must wrap the bearer
+    # check: otherwise 401 responses and OPTIONS preflights carry no CORS
+    # headers and browser clients report a CORS error instead of the 401.
     middleware = [
         Middleware(BearerAuthMiddleware, expected_token=expected),  # type: ignore[arg-type]
     ]
     if settings.cors_origins_list:
-        middleware.append(
+        middleware.insert(
+            0,
             Middleware(
                 CORSMiddleware,
                 allow_origins=settings.cors_origins_list,
