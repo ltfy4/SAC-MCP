@@ -1,6 +1,9 @@
-"""Tests for the currency / unit conversion tool surface."""
+"""Tests for currency/unit tables on the Data Import API."""
 
 from __future__ import annotations
+
+import json
+from typing import Any
 
 import httpx
 import pytest
@@ -10,10 +13,12 @@ from sac_mcp.client.http import SACClient
 from sac_mcp.tools import currency
 
 TENANT = "https://tenant.example.com"
+CCY = f"{TENANT}/api/v1/dataimport/currencyConversions"
+JOB = f"{TENANT}/api/v1/dataimport/jobs/J1"
 
 
-def _register(client: SACClient) -> dict[str, object]:
-    captured: dict[str, object] = {}
+def _register(client: SACClient) -> dict[str, Any]:
+    captured: dict[str, Any] = {}
 
     class _Stub:
         def tool(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
@@ -28,98 +33,42 @@ def _register(client: SACClient) -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_list_currency_tables(
-    client: SACClient, respx_mock: respx.MockRouter
-) -> None:
-    respx_mock.get(f"{TENANT}/api/v1/currencyConversion").mock(
-        return_value=httpx.Response(200, json={"value": [{"id": "RATES_2024"}]})
-    )
-    tools = _register(client)
-    result = await tools["list_currency_tables"]()  # type: ignore[operator]
-    assert result["row_count"] == 1
-    assert result["rows"][0]["id"] == "RATES_2024"
+async def test_list_currency_tables(client: SACClient, respx_mock: respx.MockRouter) -> None:
+    respx_mock.get(CCY).mock(return_value=httpx.Response(200, json={"value": [{"id": "FX1"}]}))
+    result = await _register(client)["list_currency_tables"]()
+    assert result["rows"] == [{"id": "FX1"}]
 
 
 @pytest.mark.asyncio
-async def test_get_currency_rates(
+async def test_upload_currency_rates_runs_import_job(
     client: SACClient, respx_mock: respx.MockRouter
 ) -> None:
-    respx_mock.get(
-        f"{TENANT}/api/v1/currencyConversion/RATES_2024/rates",
-        params={"$top": "50"},
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            json={"value": [{"sourceCurrency": "USD", "targetCurrency": "EUR", "rate": 0.92}]},
-        )
-    )
-    tools = _register(client)
-    result = await tools["get_currency_rates"](table_id="RATES_2024", top=50)  # type: ignore[operator]
-    assert result["row_count"] == 1
-    assert result["rows"][0]["sourceCurrency"] == "USD"
-
-
-@pytest.mark.asyncio
-async def test_upload_currency_rates(
-    client: SACClient, respx_mock: respx.MockRouter
-) -> None:
+    captured: dict[str, Any] = {}
     respx_mock.get(f"{TENANT}/api/v1/csrf").mock(
-        return_value=httpx.Response(200, headers={"x-csrf-token": "T1"}, json={})
+        return_value=httpx.Response(200, headers={"x-csrf-token": "t"})
     )
-    captured: dict[str, object] = {}
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["body"] = request.content
-        captured["csrf"] = request.headers.get("x-csrf-token")
-        return httpx.Response(200, json={"uploaded": 2})
+    def create(request: httpx.Request) -> httpx.Response:
+        captured["job"] = json.loads(request.content)
+        return httpx.Response(200, json={"jobID": "J1"})
 
-    respx_mock.post(
-        f"{TENANT}/api/v1/currencyConversion/RATES_2024/rates"
-    ).mock(side_effect=handler)
+    def upload(request: httpx.Request) -> httpx.Response:
+        captured["data"] = json.loads(request.content)
+        return httpx.Response(200, json={})
 
-    tools = _register(client)
-    rates = [
-        {"sourceCurrency": "USD", "targetCurrency": "EUR", "rate": 0.92},
-        {"sourceCurrency": "USD", "targetCurrency": "GBP", "rate": 0.79},
-    ]
-    result = await tools["upload_currency_rates"](  # type: ignore[operator]
-        table_id="RATES_2024", rates=rates
+    respx_mock.post(f"{CCY}/FX1").mock(side_effect=create)
+    respx_mock.post(JOB).mock(side_effect=upload)
+    respx_mock.post(f"{JOB}/validate").mock(
+        return_value=httpx.Response(200, json={"failedNumberRows": 0})
     )
-    assert result["uploaded"] == 2
-    assert captured["csrf"] == "T1"
-    assert b"USD" in captured["body"]  # type: ignore[operator]
-
-
-@pytest.mark.asyncio
-async def test_list_unit_tables(
-    client: SACClient, respx_mock: respx.MockRouter
-) -> None:
-    respx_mock.get(f"{TENANT}/api/v1/unitConversion").mock(
-        return_value=httpx.Response(200, json=[{"id": "UOM_GLOBAL"}])
+    respx_mock.post(f"{JOB}/run").mock(return_value=httpx.Response(200, json={}))
+    respx_mock.get(f"{JOB}/status").mock(
+        return_value=httpx.Response(200, json={"jobStatus": "COMPLETED"})
     )
-    tools = _register(client)
-    result = await tools["list_unit_tables"]()  # type: ignore[operator]
-    assert result["row_count"] == 1
-    assert result["rows"][0]["id"] == "UOM_GLOBAL"
 
+    rates = [{"SourceCurrency": "EUR", "TargetCurrency": "GBP", "ExchangeRate": "0.86"}]
+    result = await _register(client)["upload_currency_rates"](table_id="FX1", rates=rates)
 
-@pytest.mark.asyncio
-async def test_read_currency_data(
-    client: SACClient, respx_mock: respx.MockRouter
-) -> None:
-    captured: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"value": [{"Currency": "EUR", "Rate": 1.0}]})
-
-    respx_mock.get(
-        f"{TENANT}/api/v1/dataexport/providers/sac/MODEL1/CurrencyData"
-    ).mock(side_effect=handler)
-
-    tools = _register(client)
-    result = await tools["read_currency_data"](  # type: ignore[operator]
-        model_id="MODEL1", top=10, filter="Currency eq 'EUR'"
-    )
-    assert result["row_count"] == 1
-    assert captured["params"]["$filter"] == "Currency eq 'EUR'"  # type: ignore[index]
+    assert result["ran"] is True
+    assert captured["job"]["JobSettings"]["importMethod"] == "Update"
+    assert captured["data"] == {"Data": rates}

@@ -16,7 +16,7 @@ TENANT = "https://tenant.example.com"
 MODEL = "Sales"
 CREATE_PATH = f"{TENANT}/api/v1/dataimport/models/{MODEL}/factData"
 JOB = "job-1"
-DATA_PATH = f"{TENANT}/api/v1/dataimport/jobs/{JOB}/data"
+DATA_PATH = f"{TENANT}/api/v1/dataimport/jobs/{JOB}"  # upload = POST /jobs/{id}
 VALIDATE_PATH = f"{TENANT}/api/v1/dataimport/jobs/{JOB}/validate"
 RUN_PATH = f"{TENANT}/api/v1/dataimport/jobs/{JOB}/run"
 STATUS_PATH = f"{TENANT}/api/v1/dataimport/jobs/{JOB}/status"
@@ -62,7 +62,7 @@ def _mock_happy_lifecycle(respx_mock: respx.MockRouter) -> dict[str, Any]:
     )
 
     def data_handler(request: httpx.Request) -> httpx.Response:
-        captured["chunks"].append(json.loads(request.content)["data"])
+        captured["chunks"].append(json.loads(request.content)["Data"])
         return httpx.Response(200, json={})
 
     respx_mock.post(DATA_PATH).mock(side_effect=data_handler)

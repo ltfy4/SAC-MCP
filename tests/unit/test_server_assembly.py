@@ -48,12 +48,10 @@ async def test_all_tools_registered_with_correct_hints() -> None:
         # Users
         "list_users", "create_user", "deactivate_user",
         # Public dimensions
-        "list_public_dimensions", "read_public_dimension_master_data",
-        "read_public_dimension_hierarchies",
+        "list_public_dimensions", "get_public_dimension",
         # Currency / unit conversion
-        "list_currency_tables", "get_currency_table", "get_currency_rates",
-        "upload_currency_rates", "list_unit_tables", "get_unit_table",
-        "get_unit_rates", "upload_unit_rates", "read_currency_data",
+        "list_currency_tables", "get_currency_table",
+        "upload_currency_rates", "list_unit_tables", "get_unit_table", "upload_unit_rates",
         # Delta / difference tracking
         "init_delta_tracking", "get_delta_changes",
         # Widget query + sql query + plan-only smart query

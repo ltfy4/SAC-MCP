@@ -1,143 +1,102 @@
-"""MCP tools for SAP Analytics Cloud Currency and Unit Conversion tables.
+"""Currency and unit conversion tables (SAP Data Import API).
 
-SAC stores exchange rates in currency conversion tables and unit-of-measure
-conversion factors in unit conversion tables. They are administered separately
-from models and are linked to models during model configuration.
+SAC manages rate tables through ``/api/v1/dataimport/currencyConversions`` and
+``/api/v1/dataimport/unitConversions``: list, describe, and write rates with
+an import job. The old ``/api/v1/currencyConversion`` paths and the
+``CurrencyData`` export entity do not exist (404 / not in the service
+document), and the public API offers no endpoint to *read* stored rates.
+Requires Data Import access for the OAuth client (otherwise error 3401).
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
-from sac_mcp.client.paths import seg
-from sac_mcp.tools._common import compact, page_envelope, safe
+from sac_mcp.client.paths import DATA_IMPORT_ROOT, seg
+from sac_mcp.tools._common import collect, page_envelope, safe
+from sac_mcp.tools.dataimport import ImportMethod, job_body, run_import
 
-_CCY = "/api/v1/currencyConversion"
-_UNIT = "/api/v1/unitConversion"
-
-
-def _unwrap(data: Any) -> list[dict[str, Any]]:
-    if isinstance(data, list):
-        return [r for r in data if isinstance(r, dict)]
-    if isinstance(data, dict):
-        value = data.get("value") or []
-        return [r for r in value if isinstance(r, dict)]
-    return []
+_ROOTS = {
+    "currency": f"{DATA_IMPORT_ROOT}/currencyConversions",
+    "unit": f"{DATA_IMPORT_ROOT}/unitConversions",
+}
+TableKind = Literal["currency", "unit"]
 
 
 def register(server: FastMCP, client: SACClient) -> None:
-    # ---- Currency conversion ---------------------------------------------
+    read = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
+    write = ToolAnnotations(destructiveHint=True, openWorldHint=True)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    async def _list(kind: TableKind, top: int) -> dict[str, Any]:
+        rows, more = await collect(client, _ROOTS[kind], max_rows=top)
+        return page_envelope(rows, has_more=more)
+
+    async def _get(kind: TableKind, table_id: str) -> dict[str, Any]:
+        base = f"{_ROOTS[kind]}/{seg(table_id)}"
+        return {
+            "table": await client.get_json(base),
+            "metadata": await client.get_json(f"{base}/metadata"),
+        }
+
+    async def _upload(
+        kind: TableKind, table_id: str, rates: list[dict[str, Any]], method: str
+    ) -> dict[str, Any]:
+        if not rates:
+            return {"error": "No rates to import — the payload is empty"}
+        return await run_import(
+            client, f"{_ROOTS[kind]}/{seg(table_id)}", job_body(method), rates
+        )
+
+    @server.tool(annotations=read)
     @safe
-    async def list_currency_tables() -> dict[str, Any]:
-        """List currency conversion tables on the tenant."""
+    async def list_currency_tables(top: int = 100) -> dict[str, Any]:
+        """List currency conversion (exchange-rate) tables."""
 
-        data = await client.get_json(_CCY)
-        return page_envelope(compact(_unwrap(data)))
+        return await _list("currency", top)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=read)
     @safe
     async def get_currency_table(table_id: str) -> dict[str, Any]:
-        """Get the metadata for a single currency conversion table."""
+        """Describe one currency table and the columns its rate import expects."""
 
-        result = await client.get_json(f"{_CCY}/{seg(table_id)}")
-        return result if isinstance(result, dict) else {"value": result}
+        return await _get("currency", table_id)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    @safe
-    async def get_currency_rates(table_id: str, top: int = 200) -> dict[str, Any]:
-        """List exchange rates stored in a currency conversion table."""
-
-        data = await client.get_json(f"{_CCY}/{seg(table_id)}/rates", params={"$top": top})
-        return page_envelope(compact(_unwrap(data)))
-
-    @server.tool(annotations=ToolAnnotations(destructiveHint=True))
+    @server.tool(annotations=write)
     @safe
     async def upload_currency_rates(
-        table_id: str, rates: list[dict[str, Any]]
+        table_id: str, rates: list[dict[str, Any]], import_method: ImportMethod = "Update"
     ) -> dict[str, Any]:
-        """Upload exchange rates to a currency conversion table.
+        """Write exchange rates into a currency table. **Mutates the tenant.**
 
-        Each rate dict typically contains:
-            - sourceCurrency: ISO currency code (e.g. ``USD``)
-            - targetCurrency: ISO currency code (e.g. ``EUR``)
-            - rateType: e.g. ``M`` (monthly average), ``S`` (spot)
-            - validFrom: ISO date the rate becomes effective
-            - rate: numeric exchange-rate value
+        Runs create job → upload → validate → run; stops before running if any
+        row fails validation. Columns follow ``get_currency_table``'s metadata.
         """
 
-        result = await client.post_json(f"{_CCY}/{seg(table_id)}/rates", json=rates)
-        if isinstance(result, dict):
-            return result
-        return {"result": result}
+        return await _upload("currency", table_id, rates, import_method)
 
-    # ---- Unit conversion -------------------------------------------------
-
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=read)
     @safe
-    async def list_unit_tables() -> dict[str, Any]:
-        """List unit-of-measure conversion tables on the tenant."""
+    async def list_unit_tables(top: int = 100) -> dict[str, Any]:
+        """List unit-of-measure conversion tables."""
 
-        data = await client.get_json(_UNIT)
-        return page_envelope(compact(_unwrap(data)))
+        return await _list("unit", top)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=read)
     @safe
     async def get_unit_table(table_id: str) -> dict[str, Any]:
-        """Get the metadata for a single unit conversion table."""
+        """Describe one unit conversion table and the columns its import expects."""
 
-        result = await client.get_json(f"{_UNIT}/{seg(table_id)}")
-        return result if isinstance(result, dict) else {"value": result}
+        return await _get("unit", table_id)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    @safe
-    async def get_unit_rates(table_id: str, top: int = 200) -> dict[str, Any]:
-        """List conversion factors stored in a unit conversion table."""
-
-        data = await client.get_json(f"{_UNIT}/{seg(table_id)}/rates", params={"$top": top})
-        return page_envelope(compact(_unwrap(data)))
-
-    @server.tool(annotations=ToolAnnotations(destructiveHint=True))
+    @server.tool(annotations=write)
     @safe
     async def upload_unit_rates(
-        table_id: str, rates: list[dict[str, Any]]
+        table_id: str, rates: list[dict[str, Any]], import_method: ImportMethod = "Update"
     ) -> dict[str, Any]:
-        """Upload unit-of-measure conversion factors to a unit conversion table.
+        """Write conversion factors into a unit table. **Mutates the tenant.**"""
 
-        Each rate dict typically contains:
-            - sourceUnit / targetUnit: unit codes
-            - factor: numeric conversion factor
-            - validFrom: ISO date the factor becomes effective
-        """
-
-        result = await client.post_json(f"{_UNIT}/{seg(table_id)}/rates", json=rates)
-        if isinstance(result, dict):
-            return result
-        return {"result": result}
-
-    # ---- Model-level currency data --------------------------------------
-
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    @safe
-    async def read_currency_data(
-        model_id: str, top: int = 200, filter: str | None = None
-    ) -> dict[str, Any]:
-        """Read the CurrencyData entity set for a specific model."""
-
-        params: dict[str, Any] = {"$top": top}
-        if filter:
-            params["$filter"] = filter
-
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            f"/api/v1/dataexport/providers/sac/{seg(model_id)}/CurrencyData",
-            params=params,
-            max_rows=top,
-        ):
-            rows.append(r)
-        return page_envelope(compact(rows))
+        return await _upload("unit", table_id, rates, import_method)
