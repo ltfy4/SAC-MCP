@@ -24,11 +24,14 @@ from mcp.types import ToolAnnotations
 
 from sac_mcp.client.errors import SACError
 from sac_mcp.client.http import SACClient
-from sac_mcp.client.paths import seg
-from sac_mcp.tools._common import page_envelope, safe
+from sac_mcp.client.paths import DATA_IMPORT_ROOT, seg
+from sac_mcp.tools._common import collect, page_envelope, safe
 
-ImportKind = Literal["factData", "masterData"]
-ImportMethod = Literal["Append", "Update", "Replace", "Delete"]
+# Per SAP's Data Import API. masterFactData writes master and fact data in one
+# job; privateFactData targets the caller's private version.
+ImportKind = Literal["factData", "masterData", "masterFactData", "privateFactData"]
+ImportMethod = Literal["Update", "Append", "CleanAndReplace", "DeleteAndUpsert", "DropAndInsert"]
+_IMPORT = DATA_IMPORT_ROOT
 
 # Keys under which SAC releases report validation failures. Shapes vary by
 # release, so we probe all of them.
@@ -71,6 +74,90 @@ def _failed_row_count(validation: Any) -> int:
     return worst
 
 
+def job_body(
+    import_method: str,
+    mapping: dict[str, str] | None = None,
+    default_values: dict[str, str] | None = None,
+    execute_with_failed_rows: bool = False,
+) -> dict[str, Any]:
+    """Body for job creation: ``{Mapping?, DefaultValues?, JobSettings}`` (SAP spec)."""
+
+    body: dict[str, Any] = {
+        "JobSettings": {
+            "importMethod": import_method,
+            "executeWithFailedRows": execute_with_failed_rows,
+        }
+    }
+    if mapping:
+        body["Mapping"] = mapping
+    if default_values:
+        body["DefaultValues"] = default_values
+    return body
+
+
+async def run_import(
+    client: SACClient,
+    create_path: str,
+    body: dict[str, Any],
+    rows: list[dict[str, Any]],
+    chunk_size: int = 50_000,
+) -> dict[str, Any]:
+    """Create a job at ``create_path``, upload ``rows``, validate and run it.
+
+    Stops before running when validation rejects rows. Once the job exists,
+    every failure is returned together with its ``job_id`` so the caller can
+    inspect or cancel it.
+    """
+
+    created = await client.post_json(create_path, json=body)
+    job_id = _extract_job_id(created)
+    if job_id is None:
+        return {"error": "SAC did not return a job ID for the created import job", "response": created}
+
+    job = f"{_IMPORT}/jobs/{seg(job_id)}"
+    try:
+        chunk_size = max(1, chunk_size)
+        for start in range(0, len(rows), chunk_size):
+            await client.post_json(job, json={"Data": rows[start : start + chunk_size]})
+
+        validation = await client.post_json(f"{job}/validate")
+        failed = _failed_row_count(validation)
+        if failed > 0:
+            return {
+                "job_id": job_id,
+                "ran": False,
+                "validation": validation,
+                "hint": (
+                    f"{failed} rows failed validation; call "
+                    f"get_job_invalid_rows(job_id='{job_id}') to inspect them, "
+                    f"then fix the data or cancel_job(job_id='{job_id}')."
+                ),
+            }
+
+        run_result = await client.post_json(f"{job}/run")
+        status = await client.get_json(f"{job}/status")
+    except SACError as exc:
+        return {
+            "error": exc.to_tool_message(),
+            "code": exc.code,
+            "status": exc.status_code,
+            "job_id": job_id,
+            "hint": (
+                f"The import job was created but did not complete; call "
+                f"get_job_status(job_id='{job_id}') or cancel_job(job_id='{job_id}')."
+            ),
+        }
+
+    return {
+        "job_id": job_id,
+        "ran": True,
+        "rows_uploaded": len(rows),
+        "validation": validation,
+        "run": run_result,
+        "job_status": status,
+    }
+
+
 def register(server: FastMCP, client: SACClient) -> None:
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
@@ -85,8 +172,10 @@ def register(server: FastMCP, client: SACClient) -> None:
 
         Args:
             model_id: Target model (provider) ID.
-            kind: ``factData`` (default) or ``masterData``.
-            import_method: One of Append, Update, Replace, Delete.
+            kind: ``factData`` (default), ``masterData``, ``masterFactData``
+                or ``privateFactData``.
+            import_method: ``Update`` (default), ``Append``, ``CleanAndReplace``,
+                ``DeleteAndUpsert`` or ``DropAndInsert``.
             mapping: Source → target column mapping (optional).
             default_values: Static defaults for unmapped columns.
 
@@ -94,14 +183,9 @@ def register(server: FastMCP, client: SACClient) -> None:
         :func:`validate_job` and :func:`run_job` in turn.
         """
 
-        body: dict[str, Any] = {"importMethod": import_method}
-        if mapping:
-            body["mappings"] = mapping
-        if default_values:
-            body["defaultValues"] = default_values
-
         return await client.post_json(
-            f"/api/v1/dataimport/models/{seg(model_id)}/{seg(kind)}", json=body
+            f"{_IMPORT}/models/{seg(model_id)}/{seg(kind)}",
+            json=job_body(import_method, mapping, default_values),
         )
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -123,47 +207,53 @@ def register(server: FastMCP, client: SACClient) -> None:
         if rows is None:
             # csv_text path: convert to JSON rows so we get consistent validation.
             rows = _parse_csv_rows(csv_text or "")
-        return await client.post_json(
-            f"/api/v1/dataimport/jobs/{seg(job_id)}/data", json={"data": rows}
-        )
+        return await client.post_json(f"{_IMPORT}/jobs/{seg(job_id)}", json={"Data": rows})
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
     async def validate_job(job_id: str) -> dict[str, Any]:
         """Validate an import job (does not write to the model)."""
 
-        return await client.post_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/validate")
+        return await client.post_json(f"{_IMPORT}/jobs/{seg(job_id)}/validate")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
     async def run_job(job_id: str) -> dict[str, Any]:
         """Execute a previously-validated import job. **Mutates the model.**"""
 
-        return await client.post_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/run")
+        return await client.post_json(f"{_IMPORT}/jobs/{seg(job_id)}/run")
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
     async def get_job_status(job_id: str) -> dict[str, Any]:
         """Return the current status of an import job."""
 
-        return await client.get_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/status")
+        return await client.get_json(f"{_IMPORT}/jobs/{seg(job_id)}/status")
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True))
     @safe
     async def cancel_job(job_id: str) -> dict[str, Any]:
         """Cancel an in-progress import job."""
 
-        await client.delete(f"/api/v1/dataimport/jobs/{seg(job_id)}")
+        await client.delete(f"{_IMPORT}/jobs/{seg(job_id)}")
         return {"job_id": job_id, "cancelled": True}
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
     async def list_recent_jobs(model_id: str, top: int = 50) -> dict[str, Any]:
-        """List recent import jobs for a model."""
+        """List recent import jobs that target one model.
 
-        return await client.get_json(
-            f"/api/v1/dataimport/models/{seg(model_id)}/jobs", params={"$top": top}
-        )
+        SAC has no per-model job list (``/models/{id}/jobs`` is error 1305), so
+        this reads ``/dataimport/jobs`` and keeps the jobs whose model ID matches.
+        """
+
+        rows: list[dict[str, Any]] = []
+        async for job in client.paginate(f"{_IMPORT}/jobs", max_rows=5000):
+            if model_id in (job.get("modelID"), job.get("modelId"), job.get("ModelID")):
+                rows.append(job)
+                if len(rows) > top:
+                    break
+        return page_envelope(rows[:top], has_more=len(rows) > top)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
@@ -176,12 +266,8 @@ def register(server: FastMCP, client: SACClient) -> None:
             top: Maximum number of jobs to return (default 100).
         """
 
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            "/api/v1/dataimport/jobs", params={"$top": top}, max_rows=top
-        ):
-            rows.append(r)
-        return page_envelope(rows)
+        rows, more = await collect(client, f"{_IMPORT}/jobs", max_rows=top)
+        return page_envelope(rows, has_more=more)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
@@ -196,7 +282,7 @@ def register(server: FastMCP, client: SACClient) -> None:
             model_id: Target model (provider) ID.
         """
 
-        return await client.get_json(f"/api/v1/dataimport/models/{seg(model_id)}/metadata")
+        return await client.get_json(f"{_IMPORT}/models/{seg(model_id)}/metadata")
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
@@ -212,7 +298,7 @@ def register(server: FastMCP, client: SACClient) -> None:
         """
 
         payload = await client.get_json(
-            f"/api/v1/dataimport/jobs/{seg(job_id)}/invalidRows", params={"$top": top}
+            f"{_IMPORT}/jobs/{seg(job_id)}/invalidRows", params={"$top": top}
         )
         if isinstance(payload, list):
             return page_envelope(payload[:top])
@@ -253,7 +339,8 @@ def register(server: FastMCP, client: SACClient) -> None:
             rows: Fact rows as column→value dicts. Provide either this or
                 ``csv_text``.
             csv_text: Raw CSV with a header row, alternative to ``rows``.
-            import_method: One of Append, Update, Replace, Delete.
+            import_method: ``Update`` (default), ``Append``, ``CleanAndReplace``,
+                ``DeleteAndUpsert`` or ``DropAndInsert``.
             mapping: Source → target column mapping (optional).
             default_values: Static defaults for unmapped columns.
             chunk_size: Rows per upload request (default 50000, SAC's
@@ -271,67 +358,10 @@ def register(server: FastMCP, client: SACClient) -> None:
         if not rows:
             return {"error": "No rows to import — the payload is empty"}
 
-        body: dict[str, Any] = {"importMethod": import_method}
-        if mapping:
-            body["mappings"] = mapping
-        if default_values:
-            body["defaultValues"] = default_values
-
-        created = await client.post_json(
-            f"/api/v1/dataimport/models/{seg(model_id)}/factData", json=body
+        return await run_import(
+            client,
+            f"{_IMPORT}/models/{seg(model_id)}/factData",
+            job_body(import_method, mapping, default_values),
+            rows,
+            chunk_size,
         )
-        job_id = _extract_job_id(created)
-        if job_id is None:
-            return {
-                "error": "SAC did not return a job ID for the created import job",
-                "response": created,
-            }
-
-        # From here on the job exists on the tenant; surface the job_id with
-        # any error so the caller can cancel_job / get_job_status it.
-        try:
-            chunk_size = max(1, chunk_size)
-            for start in range(0, len(rows), chunk_size):
-                await client.post_json(
-                    f"/api/v1/dataimport/jobs/{seg(job_id)}/data",
-                    json={"data": rows[start : start + chunk_size]},
-                )
-
-            validation = await client.post_json(
-                f"/api/v1/dataimport/jobs/{seg(job_id)}/validate"
-            )
-            failed = _failed_row_count(validation)
-            if failed > 0:
-                return {
-                    "job_id": job_id,
-                    "ran": False,
-                    "validation": validation,
-                    "hint": (
-                        f"{failed} rows failed validation; call "
-                        f"get_job_invalid_rows(job_id='{job_id}') to inspect them, "
-                        f"then fix the data or cancel_job(job_id='{job_id}')."
-                    ),
-                }
-
-            run_result = await client.post_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/run")
-            status = await client.get_json(f"/api/v1/dataimport/jobs/{seg(job_id)}/status")
-        except SACError as exc:
-            return {
-                "error": exc.to_tool_message(),
-                "code": exc.code,
-                "status": exc.status_code,
-                "job_id": job_id,
-                "hint": (
-                    f"The import job was created but did not complete; call "
-                    f"get_job_status(job_id='{job_id}') or cancel_job(job_id='{job_id}')."
-                ),
-            }
-
-        return {
-            "job_id": job_id,
-            "ran": True,
-            "rows_uploaded": len(rows),
-            "validation": validation,
-            "run": run_result,
-            "job_status": status,
-        }
