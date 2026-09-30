@@ -153,6 +153,38 @@ async def collect(
     return rows[:max_rows], len(rows) > max_rows
 
 
+async def read_rows_any(
+    client: SACClient,
+    path: str,
+    *,
+    params: Mapping[str, Any] | None = None,
+    max_rows: int = 200,
+) -> dict[str, Any]:
+    """Read an endpoint that may answer JSON, CSV or plain text.
+
+    SAC's audit export and monitoring endpoints reject ``Accept:
+    application/json`` with 406, so ask for anything and parse by content type.
+    """
+
+    ctype, body = await client.get_text(
+        path, params=params, accept="application/json, text/csv;q=0.9, */*;q=0.8"
+    )
+    rows: list[dict[str, Any]] | None = None
+    if "json" in ctype or body.lstrip()[:1] in ("{", "["):
+        payload = json.loads(body) if body.strip() else {}
+        if isinstance(payload, list):
+            rows = [r for r in payload if isinstance(r, dict)]
+        elif isinstance(payload, dict) and isinstance(payload.get("value"), list):
+            rows = [r for r in payload["value"] if isinstance(r, dict)]
+        else:
+            return {"content_type": ctype, "data": payload}
+    elif "csv" in ctype:
+        rows = list(csv.DictReader(io.StringIO(body)))
+    if rows is None:
+        return {"content_type": ctype, "text": body}
+    return {"content_type": ctype, **page_envelope(rows[:max_rows], has_more=len(rows) > max_rows)}
+
+
 def fit_response(result: Any) -> Any:
     """Keep a tool result under ``SAC_RESPONSE_CHAR_LIMIT`` characters.
 

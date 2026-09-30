@@ -16,14 +16,33 @@ def register(server: FastMCP, client: SACClient) -> None:
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
     async def list_teams(
-        filter: str | None = None, start_index: int = 1, count: int = 100
+        filter: str | None = None,
+        start_index: int = 1,
+        count: int = 100,
+        include_members: bool = False,
     ) -> dict[str, Any]:
-        """List SCIM groups (teams)."""
+        """List SCIM groups (teams).
+
+        Member lists (user IDs, i.e. personal data) are replaced by
+        ``member_count`` unless ``include_members`` is true; use ``get_team``
+        for one team's members.
+
+        Args:
+            filter: SCIM filter, e.g. ``'displayName co "Finance"'``.
+            start_index: 1-based index of the first team.
+            count: Page size (default 100).
+            include_members: Return full member lists.
+        """
 
         params: dict[str, Any] = {"startIndex": start_index, "count": count}
         if filter:
             params["filter"] = filter
-        return await client.get_json("/api/v1/scim/Groups", params=params)
+        payload = await client.get_json("/api/v1/scim/Groups", params=params)
+        if not include_members and isinstance(payload, dict):
+            for team in payload.get("Resources") or []:
+                if isinstance(team, dict) and isinstance(team.get("members"), list):
+                    team["member_count"] = len(team.pop("members"))
+        return payload
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @safe
