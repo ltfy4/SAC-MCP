@@ -1,20 +1,9 @@
-"""Data Action tools — list, inspect and trigger SAC Data Actions.
+"""Data Action tools.
 
-Data Actions are the planning-model automation primitive in SAC (copy,
-cross-model copy, allocation, advanced-formula steps). They are distinct from
-Multi-Actions, which orchestrate *several* data actions plus publish/import
-steps; use the ``multiaction`` tools for those.
-
-Endpoint family::
-
-    GET  /api/v1/dataactions                              → list
-    GET  /api/v1/dataactions/{id}                         → detail (incl. parameters)
-    POST /api/v1/dataactions/{id}/executions              → trigger a run
-    GET  /api/v1/dataactions/{id}/executions              → recent runs
-    GET  /api/v1/dataactions/executions/{executionId}     → run status
-
-Executions are asynchronous: triggering returns an ``executionId`` that must be
-polled via :func:`get_data_action_status` until it reaches a terminal state.
+Verified live: ``/api/v1/dataactions`` does not exist (404) — SAC exposes no
+REST API to trigger a Data Action directly. Data Actions are listed from the
+file repository (resource type ``DATAACTION``) and executed by adding them
+as a step of a Multi-Action and calling ``run_multi_action``.
 """
 
 from __future__ import annotations
@@ -25,104 +14,37 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from sac_mcp.client.http import SACClient
-from sac_mcp.client.paths import seg
-from sac_mcp.tools._common import compact, page_envelope, safe
+from sac_mcp.client.odata import eq
+from sac_mcp.tools._common import safe
+from sac_mcp.tools.resources import REPO, list_repository
 
 
 def register(server: FastMCP, client: SACClient) -> None:
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    @safe
-    async def list_data_actions(
-        top: int = 100,
-        model_id: str | None = None,
-    ) -> dict[str, Any]:
-        """List Data Actions defined in the tenant.
+    read = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
 
-        Args:
-            top: Maximum number of data actions to return (default 100).
-            model_id: Optional model ID; only data actions targeting this model
-                are returned.
+    @server.tool(annotations=read)
+    @safe
+    async def list_data_actions(name_contains: str | None = None, max_rows: int = 100) -> dict[str, Any]:
+        """List Data Actions (file-repository resources of type ``DATAACTION``).
+
+        To execute one, run a Multi-Action that contains it (``run_multi_action``);
+        SAC has no endpoint that triggers a Data Action on its own.
         """
 
-        params: dict[str, Any] = {"$top": top}
-        if model_id:
-            params["modelId"] = model_id
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            "/api/v1/dataactions", params=params, max_rows=top
-        ):
-            rows.append(r)
-        return page_envelope(compact(rows))
+        return await list_repository(
+            client, resource_type="DATAACTION", name_contains=name_contains, max_rows=max_rows
+        )
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=read)
     @safe
     async def get_data_action(data_action_id: str) -> dict[str, Any]:
-        """Return one Data Action's detail, including its parameter definitions.
+        """Return the repository entry (name, owner, timestamps) of one Data Action."""
 
-        Call this before :func:`run_data_action` to discover which parameters
-        (and member values) the data action expects.
-
-        Args:
-            data_action_id: The Data Action ID (from ``list_data_actions``).
-        """
-
-        return await client.get_json(f"/api/v1/dataactions/{seg(data_action_id)}")
-
-    @server.tool(annotations=ToolAnnotations(destructiveHint=True))
-    @safe
-    async def run_data_action(
-        data_action_id: str,
-        parameter_values: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        """Trigger a Data Action execution. **Mutates the target model.**
-
-        The execution is asynchronous — poll the returned ``executionId`` with
-        :func:`get_data_action_status` until it reaches a terminal state.
-
-        Args:
-            data_action_id: The Data Action ID (from ``list_data_actions``).
-            parameter_values: Values for the data action's parameters, e.g.
-                ``[{"parameterId": "TargetVersion", "value": "public.Actual"}]``.
-                Use :func:`get_data_action` to discover the expected parameters.
-        """
-
-        body: dict[str, Any] = {}
-        if parameter_values:
-            body["parameterValues"] = parameter_values
-        return await client.post_json(
-            f"/api/v1/dataactions/{seg(data_action_id)}/executions", json=body
+        page = await client.get_json(
+            REPO,
+            params={"$filter": f"{eq('resourceId', data_action_id)} and resourceType eq 'DATAACTION'", "$top": 1},
         )
-
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    @safe
-    async def list_data_action_executions(
-        data_action_id: str, top: int = 50
-    ) -> dict[str, Any]:
-        """List recent executions of one Data Action (newest first).
-
-        Args:
-            data_action_id: The Data Action ID.
-            top: Maximum number of executions to return (default 50).
-        """
-
-        rows: list[dict[str, Any]] = []
-        async for r in client.paginate(
-            f"/api/v1/dataactions/{seg(data_action_id)}/executions",
-            params={"$top": top},
-            max_rows=top,
-        ):
-            rows.append(r)
-        return page_envelope(compact(rows))
-
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    @safe
-    async def get_data_action_status(execution_id: str) -> dict[str, Any]:
-        """Return the status of a Data Action execution.
-
-        Args:
-            execution_id: The execution ID returned by ``run_data_action``.
-        """
-
-        return await client.get_json(
-            f"/api/v1/dataactions/executions/{seg(execution_id)}"
-        )
+        rows = page.get("value", []) if isinstance(page, dict) else []
+        if not rows:
+            return {"error": f"No Data Action with id {data_action_id!r}", "code": "not_found"}
+        return dict(rows[0])
